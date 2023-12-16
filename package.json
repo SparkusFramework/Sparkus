@@ -1,0 +1,33 @@
+{
+  "name": "sparkus",
+  "version": "0.0.1-alpha",
+  "description": "A robust and scalable ESM-based framework for large Node.js backends.",
+  "author": "Maxandre <contact@maxand.re>",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "private": false,
+  "files": [
+    "dist"
+  ],
+  "keywords": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxand-re/Sparkus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maxand-re/Sparkus/issues"
+  },
+  "homepage": "https://github.com/maxand-re/Sparkus#readme",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {}
+}
