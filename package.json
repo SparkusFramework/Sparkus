@@ -1,6 +1,6 @@
 {
     "name": "sparkus",
-    "version": "0.0.1-alpha",
+    "version": "0.0.2-alpha",
     "description": "A robust and scalable ESM-based framework for large Node.js backends.",
     "author": "Maxandre <contact@maxand.re>",
     "license": "MIT",
