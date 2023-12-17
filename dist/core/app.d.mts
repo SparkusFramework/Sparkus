@@ -1,4 +1,5 @@
 import { SparkusLoggerLevel } from "../utils/index.mjs";
+import { ControllerData } from "../decorators/index.mjs";
 export declare enum SparkusDataType {
     Controller = 0,
     Service = 1,
@@ -34,6 +35,9 @@ export declare class App {
     start(): Promise<void>;
     private scanFolder;
     unloadFile(url: URL): Promise<boolean>;
-    loadFile(file: URL): Promise<boolean>;
+    loadFile(file: URL): Promise<{
+        isLoaded: boolean;
+        controller?: ControllerData;
+    }>;
 }
 export {};

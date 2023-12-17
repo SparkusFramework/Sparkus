@@ -2,7 +2,7 @@ import { Logger, SparkusLoggerLevel } from "../utils/index.mjs";
 import {
     ControllerData,
     EndpointData,
-    InjectLogger,
+    InjectLogger
 } from "../decorators/index.mjs";
 
 import path from "node:path";
@@ -103,16 +103,20 @@ export class App {
                 const promises = this.scanFolder(fileUrl);
                 loadPromises.push(...promises);
             } else {
-                const promise = this.loadFile(fileUrl).then((isLoaded) => {
+                const promise = this.loadFile(fileUrl).then(({isLoaded, controller}) => {
                     if (!isLoaded)
                         this.logger.warn(
-                          `File can't load (not a valid Sparkus class): "${fileUrl}"`,
+                            `File can't load (not a valid Sparkus class): "${fileUrl}"`
+                        );
+                    else
+                        this.logger.info(
+                            `Controller "${controller.name}" successfully added.`
                         );
                 });
 
                 loadPromises.push(promise);
             }
-        })
+        });
 
         return loadPromises;
     }
@@ -128,18 +132,20 @@ export class App {
         return false;
     }
 
-    async loadFile(file: URL): Promise<boolean> {
+    async loadFile(file: URL): Promise<{ isLoaded: boolean, controller?: ControllerData }> {
         this.logger.debug(`Loading file "${file}"...`);
 
-        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts")) return false;
+        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts")) return { isLoaded: false };
 
         const imported = this.watcher
             ? await this.watcher.dynamicImport(file)
-            : await import(file.toString());
+            : (await import(file.toString())).default;
 
-        const sparkusData: SparkusData = new imported.default()._sparkus;
+        if (!imported) return { isLoaded: false };
 
-        if (!sparkusData) return false;
+        const sparkusData: SparkusData = new imported()._sparkus;
+
+        if (!sparkusData) return { isLoaded: false };
 
         if (sparkusData.type === SparkusDataType.Controller) {
             const controller = sparkusData.data as ControllerData;
@@ -147,10 +153,8 @@ export class App {
             this.logger.debug(`Loading controller "${controller.name}"...`);
 
             const methods = Object.getOwnPropertyDescriptors(
-                controller.constructor.prototype,
+                controller.constructor.prototype
             );
-
-            console.log(controller.constructor["id"]);
 
             Object.keys(methods).forEach((methodName: string) => {
                 if (methods[methodName].value._sparkus) {
@@ -162,10 +166,6 @@ export class App {
 
                     if (isEndpoint) {
                         const endpoint = methodData.data as EndpointData;
-
-                        console.log(endpoint.name);
-                        console.log(endpoint.handler());
-
                         controller.endpoints.push(endpoint);
                     }
                 }
@@ -174,13 +174,9 @@ export class App {
             this.router.addController(controller);
             this.urlControllerMap.set(file.pathname, controller);
 
-            this.logger.info(
-                `Controller "${controller.name}" successfully added.`,
-            );
-
-            return true;
+            return { isLoaded: true, controller };
         }
 
-        return false;
+        return { isLoaded: false };
     }
 }

@@ -7,5 +7,7 @@ export declare class Watcher {
     private readonly cwdURL;
     constructor(paths: string[], cwd: string);
     init(app: App): void;
+    private createTemporaryFiles;
+    private deleteTemporaryFiles;
     dynamicImport(url: URL): Promise<any>;
 }

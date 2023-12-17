@@ -10,9 +10,10 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 import { InjectLogger } from "../decorators/index.mjs";
 import * as url from "url";
 import * as fs from "fs";
-import path from "node:path";
 import chokidar from "chokidar";
-const TMP = new URL(".sparkus_tmp/", url.pathToFileURL(process.cwd() + "/"));
+import path from "node:path";
+const cwd = url.pathToFileURL(process.cwd() + "/");
+const watcherBaseURL = new URL(".sparkus/watcher/", cwd);
 let Watcher = class Watcher {
     paths;
     cwd;
@@ -41,8 +42,11 @@ let Watcher = class Watcher {
             const isUnloaded = await app.unloadFile(url);
             if (isUnloaded) {
                 this.logger.debug(`File "${url}" unloaded.`);
-                const isLoaded = await app.loadFile(url);
-                if (!isLoaded) {
+                const { isLoaded, controller } = await app.loadFile(url);
+                if (isLoaded) {
+                    this.logger.info(`Controller "${controller.name}" successfully refreshed.`);
+                }
+                else {
                     this.logger.warn(`Can't load the file "${url}".`);
                 }
             }
@@ -51,15 +55,36 @@ let Watcher = class Watcher {
             }
         });
     }
+    createTemporaryFiles() {
+        if (!fs.existsSync(watcherBaseURL))
+            fs.mkdirSync(watcherBaseURL, { recursive: true });
+        const base = new URL(Date.now() + "/", watcherBaseURL);
+        this.paths.forEach(currentPath => {
+            const folder = new URL(currentPath, cwd);
+            const destination = new URL(currentPath, base);
+            if (!fs.existsSync(destination))
+                fs.mkdirSync(destination, { recursive: true });
+            fs.cpSync(folder, destination, { recursive: true });
+        });
+        return base;
+    }
+    deleteTemporaryFiles() {
+        fs.rmSync(watcherBaseURL, { recursive: true, force: true });
+    }
     async dynamicImport(url) {
-        if (!fs.existsSync(TMP))
-            fs.mkdirSync(TMP);
-        const fileExtension = path.extname(url.pathname);
-        const randomised = new URL(Date.now() + fileExtension, TMP);
-        fs.copyFileSync(url, randomised);
-        const imported = await import(randomised.toString());
-        fs.rmSync(TMP, { recursive: true, force: true });
-        return imported;
+        const temp = this.createTemporaryFiles();
+        try {
+            const relativePath = path.relative(this.cwdURL.pathname, url.pathname);
+            const randomised = new URL(relativePath, temp);
+            return (await import(randomised.toString())).default;
+        }
+        catch (e) {
+            this.logger.error(`There is an error with "${url}":`, e);
+        }
+        finally {
+            this.deleteTemporaryFiles();
+        }
+        return null;
     }
 };
 Watcher = __decorate([

@@ -137,7 +137,6 @@ export class Router {
             this.routes.set(method, new Map<string, Route>());
 
         const methodMap = this.routes.get(method);
-        console.log(methodMap);
 
         if (methodMap.has(path)) {
             this.logger.warn(`Route already exists: [${method}] ${path}.`);
@@ -152,10 +151,8 @@ export class Router {
     private removeRoute(path: string, method: Method) {
         if (this.routes.has(method)) {
             const methodMap = this.routes.get(method);
-            console.log(methodMap);
             methodMap.delete(path);
             this.logger.debug(`Route [${method}] ${path} removed.`);
-            console.log(methodMap);
         }
     }
 }

@@ -8,7 +8,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 import { Logger } from "../utils/index.mjs";
-import { InjectLogger, } from "../decorators/index.mjs";
+import { InjectLogger } from "../decorators/index.mjs";
 import path from "node:path";
 import * as fs from "fs";
 import { Server } from "./server.mjs";
@@ -69,9 +69,11 @@ let App = class App {
                 loadPromises.push(...promises);
             }
             else {
-                const promise = this.loadFile(fileUrl).then((isLoaded) => {
+                const promise = this.loadFile(fileUrl).then(({ isLoaded, controller }) => {
                     if (!isLoaded)
                         this.logger.warn(`File can't load (not a valid Sparkus class): "${fileUrl}"`);
+                    else
+                        this.logger.info(`Controller "${controller.name}" successfully added.`);
                 });
                 loadPromises.push(promise);
             }
@@ -89,36 +91,34 @@ let App = class App {
     async loadFile(file) {
         this.logger.debug(`Loading file "${file}"...`);
         if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts"))
-            return false;
+            return { isLoaded: false };
         const imported = this.watcher
             ? await this.watcher.dynamicImport(file)
-            : await import(file.toString());
-        const sparkusData = new imported.default()._sparkus;
+            : (await import(file.toString())).default;
+        if (!imported)
+            return { isLoaded: false };
+        const sparkusData = new imported()._sparkus;
         if (!sparkusData)
-            return false;
+            return { isLoaded: false };
         if (sparkusData.type === SparkusDataType.Controller) {
             const controller = sparkusData.data;
             this.logger.debug(`Loading controller "${controller.name}"...`);
             const methods = Object.getOwnPropertyDescriptors(controller.constructor.prototype);
-            console.log(controller.constructor["id"]);
             Object.keys(methods).forEach((methodName) => {
                 if (methods[methodName].value._sparkus) {
                     let methodData = methods[methodName].value._sparkus;
                     const isEndpoint = methodData.type === SparkusDataType.Endpoint;
                     if (isEndpoint) {
                         const endpoint = methodData.data;
-                        console.log(endpoint.name);
-                        console.log(endpoint.handler());
                         controller.endpoints.push(endpoint);
                     }
                 }
             });
             this.router.addController(controller);
             this.urlControllerMap.set(file.pathname, controller);
-            this.logger.info(`Controller "${controller.name}" successfully added.`);
-            return true;
+            return { isLoaded: true, controller };
         }
-        return false;
+        return { isLoaded: false };
     }
 };
 App = __decorate([
