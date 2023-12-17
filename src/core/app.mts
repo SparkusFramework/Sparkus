@@ -1,94 +1,104 @@
-var __decorate =
-    (this && this.__decorate) ||
-    function (decorators, target, key, desc) {
-        var c = arguments.length,
-            r =
-                c < 3
-                    ? target
-                    : desc === null
-                      ? (desc = Object.getOwnPropertyDescriptor(target, key))
-                      : desc,
-            d;
-        if (
-            typeof Reflect === "object" &&
-            typeof Reflect.decorate === "function"
-        )
-            r = Reflect.decorate(decorators, target, key, desc);
-        else
-            for (var i = decorators.length - 1; i >= 0; i--)
-                if ((d = decorators[i]))
-                    r =
-                        (c < 3
-                            ? d(r)
-                            : c > 3
-                              ? d(target, key, r)
-                              : d(target, key)) || r;
-        return c > 3 && r && Object.defineProperty(target, key, r), r;
-    };
-var __metadata =
-    (this && this.__metadata) ||
-    function (k, v) {
-        if (
-            typeof Reflect === "object" &&
-            typeof Reflect.metadata === "function"
-        )
-            return Reflect.metadata(k, v);
-    };
-import { Logger } from "../utils/index.mjs";
-import { InjectLogger } from "../decorators/index.mjs";
+import { Logger, SparkusLoggerLevel } from "../utils/index.mjs";
+import {
+    ControllerData,
+    EndpointData,
+    InjectLogger,
+} from "../decorators/index.mjs";
+
 import path from "node:path";
 import * as fs from "fs";
 import { Server } from "./server.mjs";
 import { Router } from "./router.mjs";
+import chokidar, { FSWatcher } from "chokidar";
 import * as url from "url";
-import { Watcher } from "../utils/watcher.js";
-export var SparkusDataType;
-(function (SparkusDataType) {
-    SparkusDataType[(SparkusDataType["Controller"] = 0)] = "Controller";
-    SparkusDataType[(SparkusDataType["Service"] = 1)] = "Service";
-    SparkusDataType[(SparkusDataType["Endpoint"] = 2)] = "Endpoint";
-})(SparkusDataType || (SparkusDataType = {}));
-let App = class App {
-    scan;
-    port;
-    server;
-    router;
-    watcher;
-    isWatcherEnabled = false;
-    urlControllerMap = new Map();
-    logger;
-    constructor(config) {
+import { Watcher } from "../utils/watcher.mjs";
+
+export enum SparkusDataType {
+    Controller,
+    Service,
+    Endpoint,
+}
+
+export interface SparkusClass extends Function {
+    _sparkus: SparkusData;
+    constructor: any;
+}
+
+export interface SparkusData {
+    type: SparkusDataType;
+    data: any;
+}
+
+interface BootstrapConfig {
+    scan: string[];
+    port?: number;
+    logger?: {
+        level?: SparkusLoggerLevel;
+    };
+    watch?: boolean;
+    cwd?: string;
+}
+
+@InjectLogger
+export class App {
+    private readonly scan: URL[];
+    private readonly port: number;
+    private readonly server: Server;
+    private readonly router: Router;
+    private readonly watcher: Watcher;
+    private readonly isWatcherEnabled: boolean = false;
+    private readonly urlControllerMap: Map<string, ControllerData> = new Map<
+        string,
+        ControllerData
+    >();
+
+    private logger: Logger;
+
+    constructor(config: BootstrapConfig) {
         const cwd = config.cwd ?? url.pathToFileURL(process.cwd() + "/");
+
         this.scan = config.scan.map((value) => new URL(value, cwd));
         this.port = config.port ?? 8080;
+
         if (config.logger) Logger.level = config.logger.level;
         this.isWatcherEnabled = config.watch;
+
         this.watcher = new Watcher(config.scan, config.cwd);
         this.router = new Router();
         this.server = new Server(this.port, this.router);
     }
-    async start() {
+
+    async start(): Promise<void> {
         const before = Date.now();
+
+        // Initialize the watcher if enabled
         if (this.isWatcherEnabled) {
             this.watcher.init(this);
         }
+
         // Scan all the files and get all routes asynchronously
-        const loadPromises = [];
+        const loadPromises: Promise<void>[] = [];
         for (const url of this.scan) {
             this.logger.debug(`Starting scan search on "${url}"`);
             const promises = this.scanFolder(url);
             loadPromises.push(...promises);
         }
         await Promise.all(loadPromises);
+
         // Start listening with the configured SparkusServer
         this.server.listen();
+
         this.logger.debug(`Server started in "${Date.now() - before}ms"`);
     }
-    scanFolder(url) {
+
+    private scanFolder(url: URL): Promise<void>[] {
         const files = fs.readdirSync(url);
-        const loadPromises = [];
-        for (const file of files) {
+
+        const loadPromises: Promise<void>[] = [];
+
+        files.forEach(file => {
             const fileUrl = new URL(path.join(url.toString(), file));
+
             if (fs.lstatSync(fileUrl).isDirectory()) {
                 const promises = this.scanFolder(fileUrl);
                 loadPromises.push(...promises);
@@ -96,63 +106,81 @@ let App = class App {
                 const promise = this.loadFile(fileUrl).then((isLoaded) => {
                     if (!isLoaded)
                         this.logger.warn(
-                            `File can't load (not a valid Sparkus class): "${fileUrl}"`,
+                          `File can't load (not a valid Sparkus class): "${fileUrl}"`,
                         );
                 });
+
                 loadPromises.push(promise);
             }
-        }
+        })
+
         return loadPromises;
     }
-    async unloadFile(url) {
+
+    async unloadFile(url: URL): Promise<boolean> {
         const controller = this.urlControllerMap.get(url.pathname);
+
         if (controller) {
             this.router.removeController(controller);
             return true;
         }
+
         return false;
     }
-    async loadFile(file) {
+
+    async loadFile(file: URL): Promise<boolean> {
         this.logger.debug(`Loading file "${file}"...`);
-        if (file.pathname.endsWith(".d.ts")) return false;
+
+        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts")) return false;
+
         const imported = this.watcher
             ? await this.watcher.dynamicImport(file)
             : await import(file.toString());
-        const sparkusData = new imported.default()._sparkus;
+
+        const sparkusData: SparkusData = new imported.default()._sparkus;
+
         if (!sparkusData) return false;
+
         if (sparkusData.type === SparkusDataType.Controller) {
-            const controller = sparkusData.data;
+            const controller = sparkusData.data as ControllerData;
+
             this.logger.debug(`Loading controller "${controller.name}"...`);
-            // TODO: Faire un controllerBuilder ?
+
             const methods = Object.getOwnPropertyDescriptors(
                 controller.constructor.prototype,
             );
+
             console.log(controller.constructor["id"]);
-            Object.keys(methods).forEach((methodName) => {
+
+            Object.keys(methods).forEach((methodName: string) => {
                 if (methods[methodName].value._sparkus) {
-                    let methodData = methods[methodName].value._sparkus;
+                    let methodData: SparkusData =
+                        methods[methodName].value._sparkus;
+
                     const isEndpoint =
                         methodData.type === SparkusDataType.Endpoint;
+
                     if (isEndpoint) {
-                        const endpoint = methodData.data;
+                        const endpoint = methodData.data as EndpointData;
+
                         console.log(endpoint.name);
                         console.log(endpoint.handler());
+
                         controller.endpoints.push(endpoint);
                     }
                 }
             });
+
             this.router.addController(controller);
             this.urlControllerMap.set(file.pathname, controller);
+
             this.logger.info(
                 `Controller "${controller.name}" successfully added.`,
             );
+
             return true;
         }
+
         return false;
     }
-};
-App = __decorate(
-    [InjectLogger, __metadata("design:paramtypes", [Object])],
-    App,
-);
-export { App };
+}

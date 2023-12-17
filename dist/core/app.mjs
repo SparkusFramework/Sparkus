@@ -1,52 +1,25 @@
-var __decorate =
-    (this && this.__decorate) ||
-    function (decorators, target, key, desc) {
-        var c = arguments.length,
-            r =
-                c < 3
-                    ? target
-                    : desc === null
-                      ? (desc = Object.getOwnPropertyDescriptor(target, key))
-                      : desc,
-            d;
-        if (
-            typeof Reflect === "object" &&
-            typeof Reflect.decorate === "function"
-        )
-            r = Reflect.decorate(decorators, target, key, desc);
-        else
-            for (var i = decorators.length - 1; i >= 0; i--)
-                if ((d = decorators[i]))
-                    r =
-                        (c < 3
-                            ? d(r)
-                            : c > 3
-                              ? d(target, key, r)
-                              : d(target, key)) || r;
-        return c > 3 && r && Object.defineProperty(target, key, r), r;
-    };
-var __metadata =
-    (this && this.__metadata) ||
-    function (k, v) {
-        if (
-            typeof Reflect === "object" &&
-            typeof Reflect.metadata === "function"
-        )
-            return Reflect.metadata(k, v);
-    };
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 import { Logger } from "../utils/index.mjs";
-import { InjectLogger } from "../decorators/index.mjs";
+import { InjectLogger, } from "../decorators/index.mjs";
 import path from "node:path";
 import * as fs from "fs";
 import { Server } from "./server.mjs";
 import { Router } from "./router.mjs";
 import * as url from "url";
-import { Watcher } from "../utils/watcher.js";
+import { Watcher } from "../utils/watcher.mjs";
 export var SparkusDataType;
 (function (SparkusDataType) {
-    SparkusDataType[(SparkusDataType["Controller"] = 0)] = "Controller";
-    SparkusDataType[(SparkusDataType["Service"] = 1)] = "Service";
-    SparkusDataType[(SparkusDataType["Endpoint"] = 2)] = "Endpoint";
+    SparkusDataType[SparkusDataType["Controller"] = 0] = "Controller";
+    SparkusDataType[SparkusDataType["Service"] = 1] = "Service";
+    SparkusDataType[SparkusDataType["Endpoint"] = 2] = "Endpoint";
 })(SparkusDataType || (SparkusDataType = {}));
 let App = class App {
     scan;
@@ -61,7 +34,8 @@ let App = class App {
         const cwd = config.cwd ?? url.pathToFileURL(process.cwd() + "/");
         this.scan = config.scan.map((value) => new URL(value, cwd));
         this.port = config.port ?? 8080;
-        if (config.logger) Logger.level = config.logger.level;
+        if (config.logger)
+            Logger.level = config.logger.level;
         this.isWatcherEnabled = config.watch;
         this.watcher = new Watcher(config.scan, config.cwd);
         this.router = new Router();
@@ -69,6 +43,7 @@ let App = class App {
     }
     async start() {
         const before = Date.now();
+        // Initialize the watcher if enabled
         if (this.isWatcherEnabled) {
             this.watcher.init(this);
         }
@@ -87,21 +62,20 @@ let App = class App {
     scanFolder(url) {
         const files = fs.readdirSync(url);
         const loadPromises = [];
-        for (const file of files) {
+        files.forEach(file => {
             const fileUrl = new URL(path.join(url.toString(), file));
             if (fs.lstatSync(fileUrl).isDirectory()) {
                 const promises = this.scanFolder(fileUrl);
                 loadPromises.push(...promises);
-            } else {
+            }
+            else {
                 const promise = this.loadFile(fileUrl).then((isLoaded) => {
                     if (!isLoaded)
-                        this.logger.warn(
-                            `File can't load (not a valid Sparkus class): "${fileUrl}"`,
-                        );
+                        this.logger.warn(`File can't load (not a valid Sparkus class): "${fileUrl}"`);
                 });
                 loadPromises.push(promise);
             }
-        }
+        });
         return loadPromises;
     }
     async unloadFile(url) {
@@ -114,25 +88,23 @@ let App = class App {
     }
     async loadFile(file) {
         this.logger.debug(`Loading file "${file}"...`);
-        if (file.pathname.endsWith(".d.ts")) return false;
+        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts"))
+            return false;
         const imported = this.watcher
             ? await this.watcher.dynamicImport(file)
             : await import(file.toString());
         const sparkusData = new imported.default()._sparkus;
-        if (!sparkusData) return false;
+        if (!sparkusData)
+            return false;
         if (sparkusData.type === SparkusDataType.Controller) {
             const controller = sparkusData.data;
             this.logger.debug(`Loading controller "${controller.name}"...`);
-            // TODO: Faire un controllerBuilder ?
-            const methods = Object.getOwnPropertyDescriptors(
-                controller.constructor.prototype,
-            );
+            const methods = Object.getOwnPropertyDescriptors(controller.constructor.prototype);
             console.log(controller.constructor["id"]);
             Object.keys(methods).forEach((methodName) => {
                 if (methods[methodName].value._sparkus) {
                     let methodData = methods[methodName].value._sparkus;
-                    const isEndpoint =
-                        methodData.type === SparkusDataType.Endpoint;
+                    const isEndpoint = methodData.type === SparkusDataType.Endpoint;
                     if (isEndpoint) {
                         const endpoint = methodData.data;
                         console.log(endpoint.name);
@@ -143,16 +115,14 @@ let App = class App {
             });
             this.router.addController(controller);
             this.urlControllerMap.set(file.pathname, controller);
-            this.logger.info(
-                `Controller "${controller.name}" successfully added.`,
-            );
+            this.logger.info(`Controller "${controller.name}" successfully added.`);
             return true;
         }
         return false;
     }
 };
-App = __decorate(
-    [InjectLogger, __metadata("design:paramtypes", [Object])],
-    App,
-);
+App = __decorate([
+    InjectLogger,
+    __metadata("design:paramtypes", [Object])
+], App);
 export { App };

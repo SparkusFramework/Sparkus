@@ -8,7 +8,7 @@ This ESM-based framework empowers you to build vast and scalable backend solutio
 Drawing inspiration from Spring and Quarkus, Sparkus combines the dynamic world of 
 JavaScript with robust, enterprise-ready architectures. Unleash the power of modern 
 Server-side JavaScript / TypeScript, keep your project organized and your code maintainable
-withoutsacrificing the speed and flexibility. 
+withoutsacrificing the speed and flexibility.
 
 <p align="center">
 ✨ With Sparkus, scale effortlessly and keep the spark alive in your backend development journey. ✨
@@ -21,10 +21,13 @@ withoutsacrificing the speed and flexibility.
 ## Installation
 
 You can install Sparkus with npm:
+
 ```
 npm install sparkus
 ```
+
 or with yarn:
+
 ```
 yarn add sparkus
 ```
@@ -35,38 +38,47 @@ Here's a simple example of a Sparkus application:
 
 ```ts
 // ./app.ts
-import { Sparkus } from 'sparkus'
+import {App} from "sparkus/core";
 
-await new Sparkus({
-    scan: [
-        new URL('./src/controllers', import.meta.url),
-        new URL('./src/services', import.meta.url)
-    ],
-    port: 8080
+// Bootstrap of your app
+new App({
+  // Folder to be scanned for automatic imports
+  scan: [
+    './src/controllers',
+    './src/services',
+  ],
+  // The port needed your application
+  port: 8080,
+  // Automatically reload your files on save (enable this for development)
+  watch: true
 }).start();
 ```
 
 ```ts
 // ./src/controllers/account.controller.ts
-import {Controller, GET, POST, Logger, SparkusLogger} from "sparkus";
+import {InjectLogger, Controller, GET, POST} from "sparkus/decorators";
+import {Logger} from "sparkus/utils";
 
-@Logger
+@InjectLogger
 @Controller('/api/account')
 export default class AccountController {
 
-    private logger: SparkusLogger;
+  private logger: Logger;
 
-    @GET('/hello')
-    public index(): { hello: string } {
-        return { hello: 'world!' };
-    }
+  @GET()
+  public index(): { hello: string } {
+    this.logger.info('The logger is automatically injected and configured with @InjectLogger');
+    return { hello: 'world!' };
+  }
 
-    @POST()
-    public create(): { good: string } {
-        return { good: 'bye!' };
-    }
+  @POST()
+  public create(): { good: string } {
+    return { good: 'bye!' };
+  }
+
 }
 ```
+
 ## Documentation
 
 > Soon...
