@@ -7,7 +7,7 @@ export declare enum SparkusLoggerLevel {
 export interface SparkusLoggerConfig {
     name?: string;
 }
-export declare class SparkusLogger {
+export declare class Logger {
     static level: SparkusLoggerLevel;
     private readonly name?;
     constructor(config?: SparkusLoggerConfig);

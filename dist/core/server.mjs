@@ -7,10 +7,10 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { Logger } from "../decorators/index.mjs";
-import { SparkusRouter } from "./router.mjs";
+import { InjectLogger } from "../decorators/index.mjs";
+import { Router } from "./router.mjs";
 import * as http from "http";
-let SparkusServer = class SparkusServer {
+let Server = class Server {
     port;
     router;
     logger;
@@ -20,15 +20,15 @@ let SparkusServer = class SparkusServer {
     }
     listen() {
         const server = this.createBasicServer();
-        server.on('request', (req, res) => {
+        server.on("request", (req, res) => {
             const before = Date.now();
             const response = this.router.execute(req, false);
             res.statusCode = response.status;
-            res.setHeader('Content-Type', 'application/json');
+            res.setHeader("Content-Type", response.type);
             res.end(response.message);
             this.logger.debug(`Request "${req.url}" processed in ${Date.now() - before}ms`);
         });
-        server.on('error', err => {
+        server.on("error", (err) => {
             this.logger.error(`Server error: ${err}`);
         });
         server.listen(this.port, () => {
@@ -43,8 +43,8 @@ let SparkusServer = class SparkusServer {
         return http.createServer();
     }
 };
-SparkusServer = __decorate([
-    Logger,
-    __metadata("design:paramtypes", [Number, SparkusRouter])
-], SparkusServer);
-export { SparkusServer };
+Server = __decorate([
+    InjectLogger,
+    __metadata("design:paramtypes", [Number, Router])
+], Server);
+export { Server };

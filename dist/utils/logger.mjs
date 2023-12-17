@@ -16,29 +16,29 @@ var Color;
 function color(message, color) {
     return `${color}${message}${Color.RESET}`;
 }
-export class SparkusLogger {
+export class Logger {
     static level = SparkusLoggerLevel.DEBUG;
     name;
     constructor(config = {}) {
         this.name = config.name;
     }
     debug(message) {
-        if (SparkusLogger.level <= SparkusLoggerLevel.DEBUG) {
+        if (Logger.level <= SparkusLoggerLevel.DEBUG) {
             console.log(color(`[DEBUG] [${this.name}] `, Color.GRAY) + message);
         }
     }
     info(message) {
-        if (SparkusLogger.level <= SparkusLoggerLevel.INFO) {
+        if (Logger.level <= SparkusLoggerLevel.INFO) {
             console.log(color(`[INFO] [${this.name}] `, Color.BLUE) + message);
         }
     }
     warn(message) {
-        if (SparkusLogger.level <= SparkusLoggerLevel.WARN) {
+        if (Logger.level <= SparkusLoggerLevel.WARN) {
             console.log(color(`[WARN] [${this.name}] `, Color.YELLOW) + message);
         }
     }
     error(message, error) {
-        if (SparkusLogger.level <= SparkusLoggerLevel.ERROR) {
+        if (Logger.level <= SparkusLoggerLevel.ERROR) {
             console.log(color(`[ERROR] [${this.name}] ${message}`, Color.RED));
             if (error) {
                 console.error(error);

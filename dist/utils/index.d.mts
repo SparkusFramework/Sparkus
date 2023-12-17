@@ -1,1 +1,1 @@
-export { SparkusLoggerLevel, SparkusLoggerConfig, SparkusLogger } from "./logger.mjs";
+export { SparkusLoggerLevel, SparkusLoggerConfig, Logger } from "./logger.mjs";
