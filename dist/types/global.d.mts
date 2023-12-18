@@ -7,17 +7,17 @@ export interface SparkusObject<T = any> {
 }
 export declare enum SparkusDataType {
     Controller = 0,
-    Service = 1,
-    Endpoint = 2,
+    Endpoint = 1,
+    Injectable = 2,
     Other = 3
 }
 export type DefaultClass<T = unknown> = new (...args: any) => T;
 export type DefaultFunction<T = unknown> = () => T;
 export interface SparkusClass<T = unknown> extends DefaultClass<T> {
-    _sparkus: SparkusObject;
+    _sparkus: SparkusObject[];
 }
 export interface SparkusFunction<T = unknown> extends DefaultFunction<T> {
-    _sparkus: SparkusObject;
+    _sparkus: SparkusObject[];
 }
 export interface EndpointData {
     path: string;
@@ -30,6 +30,9 @@ export interface ControllerData {
     name: string;
     endpoints: EndpointData[];
     constructor: Function;
+}
+export interface InjectableData {
+    name: string;
 }
 export interface LoggerData {
     name: string;

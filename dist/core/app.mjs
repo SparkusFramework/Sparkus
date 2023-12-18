@@ -23,7 +23,8 @@ let App = class App {
     router;
     watcher;
     isWatcherEnabled = false;
-    urlControllerMap = new Map();
+    urlControllerMap = new Map(); // TODO => ControllerManager
+    injectableMap = new Map(); // TODO: => InjectableManager
     logger;
     constructor(config) {
         const cwd = config.cwd ?? url.pathToFileURL(process.cwd() + "/");
@@ -44,7 +45,7 @@ let App = class App {
         }
         // Scan all the files and get all routes asynchronously
         const loadPromises = [];
-        for (const url of this.scan) {
+        for (const url of this.scan) { // TODO: sort to add Injectable before
             this.logger.debug(`Starting scan search on "${url}"`);
             const promises = this.scanFolder(url);
             loadPromises.push(...promises);
@@ -71,11 +72,13 @@ let App = class App {
                 loadPromises.push(...promises);
             }
             else {
-                const promise = this.loadFile(fileUrl).then(({ isLoaded, controller }) => {
-                    if (!isLoaded)
+                const promise = this.loadFile(fileUrl).then(({ isLoaded, name }) => {
+                    if (!isLoaded) {
                         this.logger.warn(`File can't load (not a valid Sparkus class): "${fileUrl}"`);
-                    else
-                        this.logger.info(`Controller "${controller.name}" successfully added.`);
+                    }
+                    else {
+                        this.logger.info(`Component "${name}" successfully added.`);
+                    }
                 });
                 loadPromises.push(promise);
             }
@@ -83,12 +86,13 @@ let App = class App {
         return loadPromises;
     }
     async unloadFile(url) {
+        // TODO: add injectable or find better solution for scalability
         const controller = this.urlControllerMap.get(url.pathname);
         if (controller) {
             this.router.removeController(controller);
             return true;
         }
-        return false;
+        return true;
     }
     async loadFile(file) {
         this.logger.debug(`Loading file "${file}"...`);
@@ -99,29 +103,42 @@ let App = class App {
             : (await import(file.toString())).default;
         if (!imported)
             return { isLoaded: false };
+        const Class = new imported().constructor;
+        const sparkusDatas = Class._sparkus;
         // TODO: Make an utils to automaticaly take the sparkus data and type it
-        const sparkusData = new imported().constructor._sparkus;
-        if (!sparkusData)
-            return { isLoaded: false };
-        // inject into @Inject object
-        console.log(Object.getOwnPropertyNames(new imported().constructor));
-        if (sparkusData.type === SparkusDataType.Controller) {
-            const controller = sparkusData.data.controller;
-            this.logger.debug(`Loading controller "${controller.name}"...`);
-            const methods = Object.getOwnPropertyDescriptors(controller.constructor.prototype);
-            Object.keys(methods).forEach((methodName) => {
-                if (methods[methodName].value._sparkus) {
-                    let methodData = methods[methodName].value._sparkus;
-                    const isEndpoint = methodData.type === SparkusDataType.Endpoint;
-                    if (isEndpoint) {
-                        const endpoint = methodData.data.endpoint;
-                        controller.endpoints.push(endpoint);
+        for (const sparkusData of sparkusDatas) {
+            if (!sparkusData)
+                return { isLoaded: false };
+            // TODO: When the Injectable is changed, update the linked file
+            if (sparkusData.data.injects) {
+                sparkusData.data.injects.forEach(({ key, target }) => {
+                    Class[key] = this.injectableMap.get(target);
+                });
+            }
+            // TODO: Find a solution to make the type scalable and not dirty
+            if (sparkusData.type === SparkusDataType.Controller) {
+                const controller = sparkusData.data.controller;
+                this.logger.debug(`Loading controller "${controller.name}"...`);
+                const methods = Object.getOwnPropertyDescriptors(controller.constructor.prototype);
+                Object.keys(methods).forEach((methodName) => {
+                    if (methods[methodName].value._sparkus) {
+                        let methodData = methods[methodName].value._sparkus[0]; // TODO: for each
+                        const isEndpoint = methodData.type === SparkusDataType.Endpoint;
+                        if (isEndpoint) {
+                            const endpoint = methodData.data.endpoint;
+                            controller.endpoints.push(endpoint);
+                        }
                     }
-                }
-            });
-            this.router.addController(controller);
-            this.urlControllerMap.set(file.pathname, controller);
-            return { isLoaded: true, controller };
+                });
+                this.router.addController(controller);
+                this.urlControllerMap.set(file.pathname, controller);
+                return { isLoaded: true, name: controller.name };
+            }
+            else if (sparkusData.type === SparkusDataType.Injectable) {
+                const injectable = sparkusData.data.injectable;
+                this.injectableMap.set(injectable.name, Class.prototype);
+                return { isLoaded: true, name: injectable.name };
+            }
         }
         return { isLoaded: false };
     }

@@ -10,20 +10,28 @@
  * set with type and data of type T.
  */
 export function simpleDecoratorFactory(sparkusFn, type) {
-    if ("_sparkus" in sparkusFn) {
-        return sparkusFn._sparkus;
-    }
-    else {
+    if (!("_sparkus" in sparkusFn)) {
         const sparkusObject = {
             type,
             data: {}
         };
         Object.defineProperty(sparkusFn, "_sparkus", {
-            value: sparkusObject,
+            value: [sparkusObject],
             writable: true,
             enumerable: true,
             configurable: true
         });
         return sparkusObject;
     }
+    const objects = sparkusFn._sparkus;
+    const existingObject = objects.find(obj => obj.type === type);
+    if (!existingObject) {
+        const sparkusObject = {
+            type,
+            data: {}
+        };
+        objects.push(sparkusObject);
+        return sparkusObject;
+    }
+    return existingObject;
 }

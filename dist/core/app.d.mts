@@ -1,5 +1,4 @@
 import { SparkusLoggerLevel } from "../utils/index.mjs";
-import { ControllerData } from "../types/index.mjs";
 interface BootstrapConfig {
     scan: string[];
     port?: number;
@@ -17,6 +16,7 @@ export declare class App {
     private readonly watcher;
     private readonly isWatcherEnabled;
     private readonly urlControllerMap;
+    private readonly injectableMap;
     private logger;
     constructor(config: BootstrapConfig);
     start(): Promise<void>;
@@ -24,7 +24,7 @@ export declare class App {
     unloadFile(url: URL): Promise<boolean>;
     loadFile(file: URL): Promise<{
         isLoaded: boolean;
-        controller?: ControllerData;
+        name?: string;
     }>;
 }
 export {};
