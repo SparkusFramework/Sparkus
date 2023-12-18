@@ -1,9 +1,7 @@
-import { ControllerData, InjectLogger } from "../decorators/index.mjs";
 import { Logger } from "../utils/index.mjs";
 import { IncomingMessage } from "node:http";
-import path from "node:path";
-
-export type Method = "GET" | "POST";
+import { ControllerData, Method } from "../types/index.mjs";
+import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
 
 export interface SparkusRouterResponse {
     status: number;
@@ -30,10 +28,10 @@ export type Route = {
     constructor: Function;
 };
 
-@InjectLogger
+@InjectLoggerClass()
 export class Router {
-    private logger: Logger;
 
+    private logger: Logger;
     private routes = new Map<Method, Map<string, Route>>();
 
     public execute(
@@ -71,7 +69,7 @@ export class Router {
                     };
                 } catch (error: any) {
                     // TODO: Make a better error handling system
-                    this.logger.error(
+                   this.logger.error(
                         `Error executing route: ${req.url}.`,
                         error,
                     );
@@ -86,7 +84,7 @@ export class Router {
                     };
                 }
             } else {
-                this.logger.warn(`Route not found: ${req.url}`);
+               this.logger.warn(`Route not found: ${req.url}`);
                 return {
                     status: 404,
                     message: JSON.stringify({

@@ -33,7 +33,10 @@ enum Color {
 }
 
 function color(message: string, ...color: Color[]): string {
-    const colorsString = color.reduce((previous, current) => `${previous}${current}`, "");
+    const colorsString = color.reduce(
+        (previous, current) => `${previous}${current}`,
+        "",
+    );
     return `${colorsString}${message}${Color.RESET}`;
 }
 
@@ -44,19 +47,19 @@ function time(): string {
 
 export class Logger {
     public static level: SparkusLoggerLevel = SparkusLoggerLevel.DEBUG;
-    private readonly name?: string;
 
-    constructor(config: SparkusLoggerConfig = {}) {
-        this.name = config.name;
-    }
+    constructor(private name: string) {}
 
     debug(message: string): void {
         if (Logger.level <= SparkusLoggerLevel.DEBUG) {
             console.log(
-                time() + " :: " +
-                color(`DEBUG`, Color.BOLD) + " " +
-                color(`${this.name}`, Color.GRAY, Color.BOLD) + " :: " +
-                color(message, Color.GRAY)
+                time() +
+                    " :: " +
+                    color(`DEBUG`, Color.BOLD) +
+                    " " +
+                    color(`${this.name}`, Color.GRAY, Color.BOLD) +
+                    " :: " +
+                    color(message, Color.GRAY),
             );
         }
     }
@@ -64,10 +67,13 @@ export class Logger {
     info(message: string): void {
         if (Logger.level <= SparkusLoggerLevel.INFO) {
             console.log(
-                time() + " :: " +
-                color(` INFO `, Color.BG_PURPLE, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.PURPLE, Color.BOLD) + " :: " +
-                message
+                time() +
+                    " :: " +
+                    color(` INFO `, Color.BG_PURPLE, Color.WHITE, Color.BOLD) +
+                    " " +
+                    color(`${this.name}`, Color.PURPLE, Color.BOLD) +
+                    " :: " +
+                    message,
             );
         }
     }
@@ -75,10 +81,13 @@ export class Logger {
     warn(message: string): void {
         if (Logger.level <= SparkusLoggerLevel.WARN) {
             console.log(
-                time() + " :: " +
-                color(` WARN `, Color.BG_ORANGE, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.BOLD, Color.ORANGE) + " :: " +
-                color(message, Color.ORANGE)
+                time() +
+                    " :: " +
+                    color(` WARN `, Color.BG_ORANGE, Color.WHITE, Color.BOLD) +
+                    " " +
+                    color(`${this.name}`, Color.BOLD, Color.ORANGE) +
+                    " :: " +
+                    color(message, Color.ORANGE),
             );
         }
     }
@@ -86,10 +95,13 @@ export class Logger {
     error(message: string, error?: any): void {
         if (Logger.level <= SparkusLoggerLevel.ERROR) {
             console.log(
-                time() + " :: " +
-                color(` ERROR `, Color.BG_RED, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.BOLD, Color.RED) + " :: " +
-                color(message, Color.RED)
+                time() +
+                    " :: " +
+                    color(` ERROR `, Color.BG_RED, Color.WHITE, Color.BOLD) +
+                    " " +
+                    color(`${this.name}`, Color.BOLD, Color.RED) +
+                    " :: " +
+                    color(message, Color.RED),
             );
 
             if (error) {

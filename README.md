@@ -59,15 +59,15 @@ new App({
 import {InjectLogger, Controller, GET, POST} from "sparkus/decorators";
 import {Logger} from "sparkus/utils";
 
-@InjectLogger
 @Controller('/api/account')
 export default class AccountController {
 
+  @InjectLogger
   private logger: Logger;
 
   @GET()
   public index(): { hello: string } {
-    this.logger.info('The logger is automatically injected and configured with @InjectLogger');
+   this.logger.info('The logger is automatically injected and configured with @InjectLogger');
     return { hello: 'world!' };
   }
 

@@ -1,18 +1,5 @@
 import { SparkusLoggerLevel } from "../utils/index.mjs";
-import { ControllerData } from "../decorators/index.mjs";
-export declare enum SparkusDataType {
-    Controller = 0,
-    Service = 1,
-    Endpoint = 2
-}
-export interface SparkusClass extends Function {
-    _sparkus: SparkusData;
-    constructor: any;
-}
-export interface SparkusData {
-    type: SparkusDataType;
-    data: any;
-}
+import { ControllerData } from "../types/index.mjs";
 interface BootstrapConfig {
     scan: string[];
     port?: number;

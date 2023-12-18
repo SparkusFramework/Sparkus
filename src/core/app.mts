@@ -1,33 +1,13 @@
 import { Logger, SparkusLoggerLevel } from "../utils/index.mjs";
-import {
-    ControllerData,
-    EndpointData,
-    InjectLogger
-} from "../decorators/index.mjs";
+import { ControllerData, EndpointData, SparkusDataType, SparkusObject } from "../types/index.mjs";
 
 import path from "node:path";
 import * as fs from "fs";
 import { Server } from "./server.mjs";
 import { Router } from "./router.mjs";
-import chokidar, { FSWatcher } from "chokidar";
 import * as url from "url";
 import { Watcher } from "../utils/watcher.mjs";
-
-export enum SparkusDataType {
-    Controller,
-    Service,
-    Endpoint,
-}
-
-export interface SparkusClass extends Function {
-    _sparkus: SparkusData;
-    constructor: any;
-}
-
-export interface SparkusData {
-    type: SparkusDataType;
-    data: any;
-}
+import { InjectLoggerClass, InjectLogger } from "../decorators/logger.decorator.mjs";
 
 interface BootstrapConfig {
     scan: string[];
@@ -39,8 +19,9 @@ interface BootstrapConfig {
     cwd?: string;
 }
 
-@InjectLogger
+@InjectLoggerClass()
 export class App {
+
     private readonly scan: URL[];
     private readonly port: number;
     private readonly server: Server;
@@ -88,31 +69,39 @@ export class App {
         // Start listening with the configured SparkusServer
         this.server.listen();
 
-        this.logger.debug(`Server started in "${Date.now() - before}ms"`);
+       this.logger.debug(`Server started in "${Date.now() - before}ms"`);
     }
 
     private scanFolder(url: URL): Promise<void>[] {
-        const files = fs.readdirSync(url);
-
         const loadPromises: Promise<void>[] = [];
 
-        files.forEach(file => {
+        let files: string[];
+        try {
+            files = fs.readdirSync(url);
+        } catch (e) {
+            this.logger.warn(`Directory at "${url}" not exist.`);
+            return loadPromises;
+        }
+
+        files.forEach((file) => {
             const fileUrl = new URL(path.join(url.toString(), file));
 
             if (fs.lstatSync(fileUrl).isDirectory()) {
                 const promises = this.scanFolder(fileUrl);
                 loadPromises.push(...promises);
             } else {
-                const promise = this.loadFile(fileUrl).then(({ isLoaded, controller }) => {
-                    if (!isLoaded)
-                        this.logger.warn(
-                            `File can't load (not a valid Sparkus class): "${fileUrl}"`
-                        );
-                    else
-                        this.logger.info(
-                            `Controller "${controller.name}" successfully added.`
-                        );
-                });
+                const promise = this.loadFile(fileUrl).then(
+                    ({ isLoaded, controller }) => {
+                        if (!isLoaded)
+                           this.logger.warn(
+                                `File can't load (not a valid Sparkus class): "${fileUrl}"`,
+                            );
+                        else
+                           this.logger.info(
+                                `Controller "${controller.name}" successfully added.`,
+                            );
+                    },
+                );
 
                 loadPromises.push(promise);
             }
@@ -132,40 +121,47 @@ export class App {
         return false;
     }
 
-    async loadFile(file: URL): Promise<{ isLoaded: boolean, controller?: ControllerData }> {
-        this.logger.debug(`Loading file "${file}"...`);
+    async loadFile(
+        file: URL,
+    ): Promise<{ isLoaded: boolean; controller?: ControllerData }> {
+       this.logger.debug(`Loading file "${file}"...`);
 
-        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts")) return { isLoaded: false };
+        if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts"))
+            return { isLoaded: false };
 
-        const imported = this.watcher
+        const imported = this.isWatcherEnabled
             ? await this.watcher.dynamicImport(file)
             : (await import(file.toString())).default;
 
         if (!imported) return { isLoaded: false };
 
-        const sparkusData: SparkusData = new imported()._sparkus;
+        // TODO: Make an utils to automaticaly take the sparkus data and type it
+        const sparkusData: SparkusObject = new imported().constructor._sparkus;
 
         if (!sparkusData) return { isLoaded: false };
 
-        if (sparkusData.type === SparkusDataType.Controller) {
-            const controller = sparkusData.data as ControllerData;
+        // inject into @Inject object
+        console.log(Object.getOwnPropertyNames(new imported().constructor));
 
-            this.logger.debug(`Loading controller "${controller.name}"...`);
+        if (sparkusData.type === SparkusDataType.Controller) {
+            const controller = sparkusData.data.controller as ControllerData;
+
+           this.logger.debug(`Loading controller "${controller.name}"...`);
 
             const methods = Object.getOwnPropertyDescriptors(
-                controller.constructor.prototype
+                controller.constructor.prototype,
             );
 
             Object.keys(methods).forEach((methodName: string) => {
                 if (methods[methodName].value._sparkus) {
-                    let methodData: SparkusData =
+                    let methodData: SparkusObject =
                         methods[methodName].value._sparkus;
 
                     const isEndpoint =
                         methodData.type === SparkusDataType.Endpoint;
 
                     if (isEndpoint) {
-                        const endpoint = methodData.data as EndpointData;
+                        const endpoint = methodData.data.endpoint as EndpointData;
                         controller.endpoints.push(endpoint);
                     }
                 }

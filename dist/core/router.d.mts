@@ -1,7 +1,6 @@
 /// <reference types="node" resolution-mode="require"/>
-import { ControllerData } from "../decorators/index.mjs";
 import { IncomingMessage } from "node:http";
-export type Method = "GET" | "POST";
+import { ControllerData, Method } from "../types/index.mjs";
 export interface SparkusRouterResponse {
     status: number;
     message: string;

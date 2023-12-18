@@ -8,19 +8,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 import { Logger } from "../utils/index.mjs";
-import { InjectLogger } from "../decorators/index.mjs";
+import { SparkusDataType } from "../types/index.mjs";
 import path from "node:path";
 import * as fs from "fs";
 import { Server } from "./server.mjs";
 import { Router } from "./router.mjs";
 import * as url from "url";
 import { Watcher } from "../utils/watcher.mjs";
-export var SparkusDataType;
-(function (SparkusDataType) {
-    SparkusDataType[SparkusDataType["Controller"] = 0] = "Controller";
-    SparkusDataType[SparkusDataType["Service"] = 1] = "Service";
-    SparkusDataType[SparkusDataType["Endpoint"] = 2] = "Endpoint";
-})(SparkusDataType || (SparkusDataType = {}));
+import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
 let App = class App {
     scan;
     port;
@@ -60,9 +55,16 @@ let App = class App {
         this.logger.debug(`Server started in "${Date.now() - before}ms"`);
     }
     scanFolder(url) {
-        const files = fs.readdirSync(url);
         const loadPromises = [];
-        files.forEach(file => {
+        let files;
+        try {
+            files = fs.readdirSync(url);
+        }
+        catch (e) {
+            this.logger.warn(`Directory at "${url}" not exist.`);
+            return loadPromises;
+        }
+        files.forEach((file) => {
             const fileUrl = new URL(path.join(url.toString(), file));
             if (fs.lstatSync(fileUrl).isDirectory()) {
                 const promises = this.scanFolder(fileUrl);
@@ -92,16 +94,19 @@ let App = class App {
         this.logger.debug(`Loading file "${file}"...`);
         if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts"))
             return { isLoaded: false };
-        const imported = this.watcher
+        const imported = this.isWatcherEnabled
             ? await this.watcher.dynamicImport(file)
             : (await import(file.toString())).default;
         if (!imported)
             return { isLoaded: false };
-        const sparkusData = new imported()._sparkus;
+        // TODO: Make an utils to automaticaly take the sparkus data and type it
+        const sparkusData = new imported().constructor._sparkus;
         if (!sparkusData)
             return { isLoaded: false };
+        // inject into @Inject object
+        console.log(Object.getOwnPropertyNames(new imported().constructor));
         if (sparkusData.type === SparkusDataType.Controller) {
-            const controller = sparkusData.data;
+            const controller = sparkusData.data.controller;
             this.logger.debug(`Loading controller "${controller.name}"...`);
             const methods = Object.getOwnPropertyDescriptors(controller.constructor.prototype);
             Object.keys(methods).forEach((methodName) => {
@@ -109,7 +114,7 @@ let App = class App {
                     let methodData = methods[methodName].value._sparkus;
                     const isEndpoint = methodData.type === SparkusDataType.Endpoint;
                     if (isEndpoint) {
-                        const endpoint = methodData.data;
+                        const endpoint = methodData.data.endpoint;
                         controller.endpoints.push(endpoint);
                     }
                 }
@@ -122,7 +127,7 @@ let App = class App {
     }
 };
 App = __decorate([
-    InjectLogger,
+    InjectLoggerClass(),
     __metadata("design:paramtypes", [Object])
 ], App);
 export { App };

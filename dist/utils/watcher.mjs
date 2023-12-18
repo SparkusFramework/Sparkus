@@ -7,7 +7,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { InjectLogger } from "../decorators/index.mjs";
+import { InjectLoggerClass } from "../decorators/index.mjs";
 import * as url from "url";
 import * as fs from "fs";
 import chokidar from "chokidar";
@@ -17,21 +17,19 @@ const watcherBaseURL = new URL(".sparkus/watcher/", cwd);
 let Watcher = class Watcher {
     paths;
     cwd;
-    watcher;
-    logger;
     cwdURL;
+    logger;
+    watcher;
     constructor(paths, cwd) {
         this.paths = paths;
         this.cwd = cwd;
-        this.cwdURL = cwd
-            ? url.pathToFileURL(cwd + "/")
-            : url.pathToFileURL(process.cwd() + "/");
+        this.cwdURL = url.pathToFileURL(cwd ?? process.cwd() + "/");
     }
     init(app) {
         this.watcher = chokidar.watch(this.paths, {
             cwd: this.cwd,
             persistent: true,
-            depth: 20,
+            depth: 20
         });
         this.watcher.on("ready", () => {
             this.logger.warn("Watcher enabled, please do not use in production.");
@@ -59,7 +57,7 @@ let Watcher = class Watcher {
         if (!fs.existsSync(watcherBaseURL))
             fs.mkdirSync(watcherBaseURL, { recursive: true });
         const base = new URL(Date.now() + "/", watcherBaseURL);
-        this.paths.forEach(currentPath => {
+        this.paths.forEach((currentPath) => {
             const folder = new URL(currentPath, cwd);
             const destination = new URL(currentPath, base);
             if (!fs.existsSync(destination))
@@ -88,7 +86,7 @@ let Watcher = class Watcher {
     }
 };
 Watcher = __decorate([
-    InjectLogger,
+    InjectLoggerClass(),
     __metadata("design:paramtypes", [Array, String])
 ], Watcher);
 export { Watcher };

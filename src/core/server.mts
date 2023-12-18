@@ -1,10 +1,11 @@
-import { InjectLogger } from "../decorators/index.mjs";
 import { Logger } from "../utils/index.mjs";
 import { Router } from "./router.mjs";
 import * as http from "http";
+import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
 
-@InjectLogger
+@InjectLoggerClass()
 export class Server {
+
     private logger: Logger;
 
     constructor(

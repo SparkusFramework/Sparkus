@@ -37,40 +37,52 @@ function time() {
     return color(`${now.toISOString()}`, Color.BOLD);
 }
 export class Logger {
-    static level = SparkusLoggerLevel.DEBUG;
     name;
-    constructor(config = {}) {
-        this.name = config.name;
+    static level = SparkusLoggerLevel.DEBUG;
+    constructor(name) {
+        this.name = name;
     }
     debug(message) {
         if (Logger.level <= SparkusLoggerLevel.DEBUG) {
-            console.log(time() + " :: " +
-                color(`DEBUG`, Color.BOLD) + " " +
-                color(`${this.name}`, Color.GRAY, Color.BOLD) + " :: " +
+            console.log(time() +
+                " :: " +
+                color(`DEBUG`, Color.BOLD) +
+                " " +
+                color(`${this.name}`, Color.GRAY, Color.BOLD) +
+                " :: " +
                 color(message, Color.GRAY));
         }
     }
     info(message) {
         if (Logger.level <= SparkusLoggerLevel.INFO) {
-            console.log(time() + " :: " +
-                color(` INFO `, Color.BG_PURPLE, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.PURPLE, Color.BOLD) + " :: " +
+            console.log(time() +
+                " :: " +
+                color(` INFO `, Color.BG_PURPLE, Color.WHITE, Color.BOLD) +
+                " " +
+                color(`${this.name}`, Color.PURPLE, Color.BOLD) +
+                " :: " +
                 message);
         }
     }
     warn(message) {
         if (Logger.level <= SparkusLoggerLevel.WARN) {
-            console.log(time() + " :: " +
-                color(` WARN `, Color.BG_ORANGE, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.BOLD, Color.ORANGE) + " :: " +
+            console.log(time() +
+                " :: " +
+                color(` WARN `, Color.BG_ORANGE, Color.WHITE, Color.BOLD) +
+                " " +
+                color(`${this.name}`, Color.BOLD, Color.ORANGE) +
+                " :: " +
                 color(message, Color.ORANGE));
         }
     }
     error(message, error) {
         if (Logger.level <= SparkusLoggerLevel.ERROR) {
-            console.log(time() + " :: " +
-                color(` ERROR `, Color.BG_RED, Color.WHITE, Color.BOLD) + " " +
-                color(`${this.name}`, Color.BOLD, Color.RED) + " :: " +
+            console.log(time() +
+                " :: " +
+                color(` ERROR `, Color.BG_RED, Color.WHITE, Color.BOLD) +
+                " " +
+                color(`${this.name}`, Color.BOLD, Color.RED) +
+                " :: " +
                 color(message, Color.RED));
             if (error) {
                 console.error(error);
