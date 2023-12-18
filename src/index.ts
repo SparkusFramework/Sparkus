@@ -16,4 +16,4 @@ export * from "./utils/index.mjs";
 /**
  * Module exports all types.
  */
-export * from "./types/global.mss";
+export * from "./types/global.mjs";

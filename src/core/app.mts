@@ -1,5 +1,12 @@
 import { Logger, SparkusLoggerLevel } from "../utils/index.mjs";
-import { ControllerData, EndpointData, SparkusDataType, SparkusObject } from "../types/index.mjs";
+import {
+    ControllerData,
+    DefaultClass,
+    EndpointData,
+    InjectableData, SparkusClass,
+    SparkusDataType,
+    SparkusObject
+} from "../types/index.mjs";
 
 import path from "node:path";
 import * as fs from "fs";
@@ -7,7 +14,7 @@ import { Server } from "./server.mjs";
 import { Router } from "./router.mjs";
 import * as url from "url";
 import { Watcher } from "../utils/watcher.mjs";
-import { InjectLoggerClass, InjectLogger } from "../decorators/logger.decorator.mjs";
+import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
 
 interface BootstrapConfig {
     scan: string[];
@@ -28,10 +35,10 @@ export class App {
     private readonly router: Router;
     private readonly watcher: Watcher;
     private readonly isWatcherEnabled: boolean = false;
-    private readonly urlControllerMap: Map<string, ControllerData> = new Map<
-        string,
-        ControllerData
-    >();
+    private readonly urlControllerMap: Map<string, ControllerData> =
+        new Map<string, ControllerData>(); // TODO => ControllerManager
+    private readonly injectableMap: Map<string, SparkusClass> =
+        new Map<string, SparkusClass>(); // TODO: => InjectableManager
 
     private logger: Logger;
 
@@ -59,7 +66,7 @@ export class App {
 
         // Scan all the files and get all routes asynchronously
         const loadPromises: Promise<void>[] = [];
-        for (const url of this.scan) {
+        for (const url of this.scan) { // TODO: sort to add Injectable before
             this.logger.debug(`Starting scan search on "${url}"`);
             const promises = this.scanFolder(url);
             loadPromises.push(...promises);
@@ -91,15 +98,12 @@ export class App {
                 loadPromises.push(...promises);
             } else {
                 const promise = this.loadFile(fileUrl).then(
-                    ({ isLoaded, controller }) => {
-                        if (!isLoaded)
-                           this.logger.warn(
-                                `File can't load (not a valid Sparkus class): "${fileUrl}"`,
-                            );
-                        else
-                           this.logger.info(
-                                `Controller "${controller.name}" successfully added.`,
-                            );
+                    ({ isLoaded, name }) => {
+                        if (!isLoaded) {
+                            this.logger.warn(`File can't load (not a valid Sparkus class): "${fileUrl}"`,);
+                        } else {
+                            this.logger.info(`Component "${name}" successfully added.`,);
+                        }
                     },
                 );
 
@@ -111,6 +115,7 @@ export class App {
     }
 
     async unloadFile(url: URL): Promise<boolean> {
+        // TODO: add injectable or find better solution for scalability
         const controller = this.urlControllerMap.get(url.pathname);
 
         if (controller) {
@@ -118,12 +123,12 @@ export class App {
             return true;
         }
 
-        return false;
+        return true;
     }
 
     async loadFile(
         file: URL,
-    ): Promise<{ isLoaded: boolean; controller?: ControllerData }> {
+    ): Promise<{ isLoaded: boolean; name?: string }> {
        this.logger.debug(`Loading file "${file}"...`);
 
         if (file.pathname.endsWith(".d.ts") || file.pathname.endsWith(".d.mts"))
@@ -135,42 +140,54 @@ export class App {
 
         if (!imported) return { isLoaded: false };
 
+        const Class = new imported().constructor;
+        const sparkusDatas: SparkusObject[] = Class._sparkus;
+
         // TODO: Make an utils to automaticaly take the sparkus data and type it
-        const sparkusData: SparkusObject = new imported().constructor._sparkus;
+        for (const sparkusData of sparkusDatas) {
+            if (!sparkusData) return { isLoaded: false };
 
-        if (!sparkusData) return { isLoaded: false };
+            // TODO: When the Injectable is changed, update the linked file
+            if (sparkusData.data.injects) {
+                sparkusData.data.injects.forEach(({ key, target }: { key: string, target: string }) => {
+                    Class[key] =  this.injectableMap.get(target);
+                })
+            }
 
-        // inject into @Inject object
-        console.log(Object.getOwnPropertyNames(new imported().constructor));
+            // TODO: Find a solution to make the type scalable and not dirty
+            if (sparkusData.type === SparkusDataType.Controller) {
+                const controller = sparkusData.data.controller as ControllerData;
 
-        if (sparkusData.type === SparkusDataType.Controller) {
-            const controller = sparkusData.data.controller as ControllerData;
+                this.logger.debug(`Loading controller "${controller.name}"...`);
 
-           this.logger.debug(`Loading controller "${controller.name}"...`);
+                const methods = Object.getOwnPropertyDescriptors(
+                    controller.constructor.prototype,
+                );
 
-            const methods = Object.getOwnPropertyDescriptors(
-                controller.constructor.prototype,
-            );
+                Object.keys(methods).forEach((methodName: string) => {
+                    if (methods[methodName].value._sparkus) {
+                        let methodData: SparkusObject =
+                            methods[methodName].value._sparkus[0]; // TODO: for each
 
-            Object.keys(methods).forEach((methodName: string) => {
-                if (methods[methodName].value._sparkus) {
-                    let methodData: SparkusObject =
-                        methods[methodName].value._sparkus;
+                        const isEndpoint =
+                            methodData.type === SparkusDataType.Endpoint;
 
-                    const isEndpoint =
-                        methodData.type === SparkusDataType.Endpoint;
-
-                    if (isEndpoint) {
-                        const endpoint = methodData.data.endpoint as EndpointData;
-                        controller.endpoints.push(endpoint);
+                        if (isEndpoint) {
+                            const endpoint = methodData.data.endpoint as EndpointData;
+                            controller.endpoints.push(endpoint);
+                        }
                     }
-                }
-            });
+                });
 
-            this.router.addController(controller);
-            this.urlControllerMap.set(file.pathname, controller);
+                this.router.addController(controller);
+                this.urlControllerMap.set(file.pathname, controller);
 
-            return { isLoaded: true, controller };
+                return { isLoaded: true, name: controller.name };
+            } else if (sparkusData.type === SparkusDataType.Injectable) {
+                const injectable = sparkusData.data.injectable as InjectableData;
+                this.injectableMap.set(injectable.name, Class.prototype);
+                return { isLoaded: true, name: injectable.name };
+            }
         }
 
         return { isLoaded: false };

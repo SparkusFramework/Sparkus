@@ -46,10 +46,10 @@ export class Watcher {
 
             if (isUnloaded) {
                 this.logger.debug(`File "${url}" unloaded.`);
-                const { isLoaded, controller } = await app.loadFile(url);
+                const { isLoaded, name } = await app.loadFile(url);
 
                 if (isLoaded) {
-                    this.logger.info(`Controller "${controller.name}" successfully refreshed.`);
+                    this.logger.info(`Component "${name}" successfully refreshed.`);
                 } else {
                     this.logger.warn(`Can't load the file "${url}".`);
                 }

@@ -3,6 +3,7 @@ import {
     SparkusDataType, SparkusFunction,
     SparkusObject
 } from "../types/index.mjs";
+import { type } from "node:os";
 
 
 /**
@@ -20,16 +21,14 @@ export function simpleDecoratorFactory<T>(
     sparkusFn: SparkusClass | SparkusFunction,
     type: SparkusDataType
 ): SparkusObject<T> {
-    if ("_sparkus" in sparkusFn) {
-        return sparkusFn._sparkus;
-    } else {
+    if (!("_sparkus" in sparkusFn)) {
         const sparkusObject: SparkusObject = {
             type,
             data: {} as T
         };
 
         Object.defineProperty(sparkusFn, "_sparkus", {
-            value: sparkusObject,
+            value: [sparkusObject],
             writable: true,
             enumerable: true,
             configurable: true
@@ -37,4 +36,20 @@ export function simpleDecoratorFactory<T>(
 
         return sparkusObject;
     }
+
+    const objects: SparkusObject[] = sparkusFn._sparkus;
+    const existingObject: SparkusObject<T> = objects.find(obj => obj.type === type);
+
+    if (!existingObject) {
+        const sparkusObject: SparkusObject = {
+            type,
+            data: {} as T
+        };
+
+        objects.push(sparkusObject);
+
+        return sparkusObject;
+    }
+
+    return existingObject;
 }
