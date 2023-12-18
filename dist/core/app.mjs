@@ -45,6 +45,7 @@ let App = class App {
         const before = Date.now();
         // Initialize the watcher if enabled
         if (this.isWatcherEnabled) {
+            this.logger.debug("test");
             this.watcher.init(this);
         }
         // Scan all the files and get all routes asynchronously

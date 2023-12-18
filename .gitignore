@@ -1,5 +1,6 @@
 node_modules
 .idea
+.fleet
 SparkusJS.iml
 yarn.lock
 .sparkus

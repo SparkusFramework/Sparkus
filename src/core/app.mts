@@ -103,7 +103,7 @@ export class App {
                 const promises = this.scanFolder(fileUrl);
                 loadPromises.push(...promises);
             } else {
-                const promise = this.loadFile(fileUrl).then(({isLoaded, controller}) => {
+                const promise = this.loadFile(fileUrl).then(({ isLoaded, controller }) => {
                     if (!isLoaded)
                         this.logger.warn(
                             `File can't load (not a valid Sparkus class): "${fileUrl}"`
