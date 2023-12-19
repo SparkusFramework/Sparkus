@@ -1,6 +1,6 @@
 {
     "name": "sparkus",
-    "version": "0.0.3",
+    "version": "0.0.3b",
     "description": "A robust and scalable ESM-based framework for large Node.js backends.",
     "author": "Maxandre <contact@maxand.re>",
     "license": "MIT",
@@ -17,7 +17,7 @@
         "./utils": "./dist/utils/index.mjs",
         "./types": "./dist/types/index.mjs"
     },
-    "keywords": [],
+    "keywords": ["framework", "rest", "api", "robust", "scalable", "server"],
     "repository": {
         "type": "git",
         "url": "https://github.com/SparkusFramework/Sparkus.git"
