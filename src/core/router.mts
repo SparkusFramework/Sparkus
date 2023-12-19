@@ -1,7 +1,8 @@
 import { Logger } from "../utils/index.mjs";
 import { IncomingMessage } from "node:http";
 import { ControllerData, Method } from "../types/index.mjs";
-import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
+import { InitLoggerClass } from "../decorators/logger.decorator.mjs";
+import path from "node:path";
 
 export interface SparkusRouterResponse {
     status: number;
@@ -28,7 +29,7 @@ export type Route = {
     constructor: Function;
 };
 
-@InjectLoggerClass()
+@InitLoggerClass()
 export class Router {
 
     private logger: Logger;
@@ -36,11 +37,11 @@ export class Router {
 
     public execute(
         req: IncomingMessage,
-        secured: boolean = false,
+        secured: boolean = false
     ): SparkusRouterResponse {
         const url = new URL(
             req.url,
-            `${secured ? "https" : "http"}://${req.headers.host}`,
+            `${secured ? "https" : "http"}://${req.headers.host}`
         );
 
         const request: SparkusRequest = {
@@ -48,7 +49,7 @@ export class Router {
             status: 200,
             path: url.pathname,
             method: req.method as Method,
-            type: "application/json",
+            type: "application/json"
         };
 
         const method = this.routes.get(request.method);
@@ -65,33 +66,33 @@ export class Router {
                     return {
                         status: request.status,
                         message: JSON.stringify(output),
-                        type: request.type,
+                        type: request.type
                     };
                 } catch (error: any) {
                     // TODO: Make a better error handling system
-                   this.logger.error(
+                    this.logger.error(
                         `Error executing route: ${req.url}.`,
-                        error,
+                        error
                     );
 
                     return {
                         status: 500,
                         message: JSON.stringify({
                             code: 500,
-                            message: "Internal Server Error",
+                            message: "Internal Server Error"
                         }),
-                        type: "application/json",
+                        type: "application/json"
                     };
                 }
             } else {
-               this.logger.warn(`Route not found: ${req.url}`);
+                this.logger.warn(`Route not found: ${req.url}`);
                 return {
                     status: 404,
                     message: JSON.stringify({
                         code: 404,
-                        message: "Not Found",
+                        message: "Not Found"
                     }),
-                    type: "application/json",
+                    type: "application/json"
                 };
             }
         }
@@ -101,17 +102,23 @@ export class Router {
         return {
             status: 501,
             message: JSON.stringify({ code: 501, message: "Not Implemented" }),
-            type: "application/json",
+            type: "application/json"
         };
+    }
+
+    private static getFormattedPath(controllerPath: string, endpointPath: string): string {
+        return (controllerPath.endsWith("/") ? controllerPath.slice(-1) : controllerPath) +
+            (endpointPath.length === 0 || endpointPath.startsWith("/") ? "" : "/") +
+            endpointPath;
     }
 
     public addController(controller: ControllerData) {
         controller.endpoints.forEach((endpoint) => {
             this.addRoute(
-                controller.path + "/" + endpoint.path,
+                Router.getFormattedPath(controller.path, endpoint.path),
                 endpoint.handler,
                 controller.constructor,
-                endpoint.method,
+                endpoint.method
             );
         });
     }
@@ -119,8 +126,8 @@ export class Router {
     public removeController(controller: ControllerData) {
         controller.endpoints.forEach((endpoint) => {
             this.removeRoute(
-                controller.path + "/" + endpoint.path,
-                endpoint.method,
+                Router.getFormattedPath(controller.path, endpoint.path),
+                endpoint.method
             );
         });
     }
@@ -129,7 +136,7 @@ export class Router {
         path: string,
         handler: Function,
         constructor: Function,
-        method: Method,
+        method: Method
     ): void {
         if (!this.routes.has(method))
             this.routes.set(method, new Map<string, Route>());

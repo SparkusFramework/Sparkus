@@ -1,6 +1,6 @@
 import { Logger } from "../utils/index.mjs";
 
-export function InjectLoggerClass<T extends { new (...args: any[]): {} }>() {
+export function InitLoggerClass<T extends { new (...args: any[]): {} }>() {
     return (constructor: T) => {
         const basePrototype = constructor.prototype;
 
@@ -25,7 +25,7 @@ export function InjectLoggerClass<T extends { new (...args: any[]): {} }>() {
 }
 
 
-export function InjectLogger(name?: string): PropertyDecorator {
+export function InitLogger(name?: string): PropertyDecorator {
     return (target: any, key: string) => {
         Object.defineProperty(target.constructor, key, {
             value: new Logger(name ?? target.constructor.name),

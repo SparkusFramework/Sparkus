@@ -1,5 +1,5 @@
 import { simpleDecoratorFactory } from "../utils/index.mjs";
-import { InjectableData, SparkusClass, SparkusDataType, SparkusObject } from "../types/index.mjs";
+import { InjectableData, InjectData, SparkusClass, SparkusDataType, SparkusObject } from "../types/index.mjs";
 
 export function Injectable(name?: string): ClassDecorator {
     return ((sparkusClass: SparkusClass): void => {
@@ -15,16 +15,17 @@ export function Injectable(name?: string): ClassDecorator {
     }) as ClassDecorator;
 }
 
+// Make @InjectAll: ClassDecorator to inject automatically all field
 export function Inject(name?: string): PropertyDecorator {
     return (target: any, key: string) => {
-        const motherClass = simpleDecoratorFactory<any>(target.constructor, SparkusDataType.Other);
+        const motherClass: SparkusObject<Array<InjectData>> = simpleDecoratorFactory<any>(target.constructor, SparkusDataType.Inject);
 
         if (!motherClass.data.injects) {
-            motherClass.data.injects = [];
+            motherClass.data.injects = new Array<InjectData>();
         }
 
         motherClass.data.injects.push({
-            key,
+            varName: key,
             target: name ?? key
         });
     }

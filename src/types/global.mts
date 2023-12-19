@@ -4,14 +4,14 @@ export interface SparkusObject<T = any> {
     type: SparkusDataType;
     data: {
         [key: string]: T
-    }
+    };
 }
 
 export enum SparkusDataType {
     Controller,
     Endpoint,
     Injectable,
-    Other
+    Inject
 }
 
 export type DefaultClass<T = unknown> = new (...args: any) => T;
@@ -43,6 +43,12 @@ export interface InjectableData {
     name: string,
 }
 
-export interface LoggerData {
-    name: string
+export interface InjectData {
+    varName: string,
+    target: string
+}
+
+export interface LoadStatus {
+    isLoaded: boolean,
+    name?: string
 }

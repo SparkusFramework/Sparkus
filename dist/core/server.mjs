@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 import { Router } from "./router.mjs";
 import * as http from "http";
-import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
+import { InitLoggerClass } from "../decorators/logger.decorator.mjs";
 let Server = class Server {
     port;
     router;
@@ -44,7 +44,7 @@ let Server = class Server {
     }
 };
 Server = __decorate([
-    InjectLoggerClass(),
+    InitLoggerClass(),
     __metadata("design:paramtypes", [Number, Router])
 ], Server);
 export { Server };

@@ -7,7 +7,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { InjectLoggerClass } from "../decorators/index.mjs";
+import { InitLoggerClass } from "../decorators/index.mjs";
 import * as url from "url";
 import * as fs from "fs";
 import chokidar from "chokidar";
@@ -40,13 +40,9 @@ let Watcher = class Watcher {
             const isUnloaded = await app.unloadFile(url);
             if (isUnloaded) {
                 this.logger.debug(`File "${url}" unloaded.`);
-                const { isLoaded, name } = await app.loadFile(url);
-                if (isLoaded) {
-                    this.logger.info(`Component "${name}" successfully refreshed.`);
-                }
-                else {
-                    this.logger.warn(`Can't load the file "${url}".`);
-                }
+                await app.loadFile(url);
+                await app.injectableManager.injectAllDependencies();
+                this.logger.info(`File "${url}" successfully refreshed.`);
             }
             else {
                 this.logger.warn(`Can't unload the file "${url}".`);
@@ -86,7 +82,7 @@ let Watcher = class Watcher {
     }
 };
 Watcher = __decorate([
-    InjectLoggerClass(),
+    InitLoggerClass(),
     __metadata("design:paramtypes", [Array, String])
 ], Watcher);
 export { Watcher };

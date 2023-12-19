@@ -16,10 +16,6 @@ export function Controller(path?: string): ClassDecorator {
                 SparkusDataType.Controller,
             );
 
-        if (controller['INJECT_LOGGER']) {
-            console.log("test");
-        }
-
         controller.data.controller = {
             path: path ?? "/",
             name: sparkusClass.name,

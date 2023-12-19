@@ -8,14 +8,15 @@ export function Injectable(name) {
         };
     });
 }
+// Make @InjectAll: ClassDecorator to inject automatically all field
 export function Inject(name) {
     return (target, key) => {
-        const motherClass = simpleDecoratorFactory(target.constructor, SparkusDataType.Other);
+        const motherClass = simpleDecoratorFactory(target.constructor, SparkusDataType.Inject);
         if (!motherClass.data.injects) {
-            motherClass.data.injects = [];
+            motherClass.data.injects = new Array();
         }
         motherClass.data.injects.push({
-            key,
+            varName: key,
             target: name ?? key
         });
     };

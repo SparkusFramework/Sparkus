@@ -1,5 +1,5 @@
 import { Logger } from "./logger.mjs";
-import { InjectLoggerClass } from "../decorators/index.mjs";
+import { InitLoggerClass } from "../decorators/index.mjs";
 import { App } from "../core/index.mjs";
 
 import * as url from "url";
@@ -10,7 +10,7 @@ import path from "node:path";
 const cwd = url.pathToFileURL(process.cwd() + "/");
 const watcherBaseURL = new URL(".sparkus/watcher/", cwd);
 
-@InjectLoggerClass()
+@InitLoggerClass()
 export class Watcher {
 
     private readonly cwdURL: URL;
@@ -46,13 +46,12 @@ export class Watcher {
 
             if (isUnloaded) {
                 this.logger.debug(`File "${url}" unloaded.`);
-                const { isLoaded, name } = await app.loadFile(url);
 
-                if (isLoaded) {
-                    this.logger.info(`Component "${name}" successfully refreshed.`);
-                } else {
-                    this.logger.warn(`Can't load the file "${url}".`);
-                }
+                await app.loadFile(url);
+
+                await app.injectableManager.injectAllDependencies();
+
+                this.logger.info(`File "${url}" successfully refreshed.`);
             } else {
                 this.logger.warn(`Can't unload the file "${url}".`);
             }

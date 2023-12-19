@@ -1,5 +1,5 @@
 import { Logger } from "../utils/index.mjs";
-export function InjectLoggerClass() {
+export function InitLoggerClass() {
     return (constructor) => {
         const basePrototype = constructor.prototype;
         return {
@@ -19,7 +19,7 @@ export function InjectLoggerClass() {
         }[constructor.name];
     };
 }
-export function InjectLogger(name) {
+export function InitLogger(name) {
     return (target, key) => {
         Object.defineProperty(target.constructor, key, {
             value: new Logger(name ?? target.constructor.name),
