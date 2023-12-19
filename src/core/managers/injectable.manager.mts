@@ -40,10 +40,9 @@ export class InjectableManager {
     }
 
     public async loadInjects(Class: SparkusClass, injects: Array<InjectData>): Promise<void> {
-        this.injects.push(...injects.map(value => {
-            this.logger.warn(Class.name)
-            return ({inject: value, originClass: Class})
-        }));
+        this.injects.push(
+            ...injects.map(value => ({inject: value, originClass: Class}))
+        );
 
         this.logger.debug(`Variable(s) "${injects.map(value => value.varName).join(",")}" added to be injected in "${Class.name}".`);
     }

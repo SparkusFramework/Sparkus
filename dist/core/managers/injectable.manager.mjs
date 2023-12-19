@@ -27,10 +27,7 @@ let InjectableManager = class InjectableManager {
         this.logger.info(`Injectable "${injectable.name}" successfully added.`);
     }
     async loadInjects(Class, injects) {
-        this.injects.push(...injects.map(value => {
-            this.logger.warn(Class.name);
-            return ({ inject: value, originClass: Class });
-        }));
+        this.injects.push(...injects.map(value => ({ inject: value, originClass: Class })));
         this.logger.debug(`Variable(s) "${injects.map(value => value.varName).join(",")}" added to be injected in "${Class.name}".`);
     }
     async unload(url) {
