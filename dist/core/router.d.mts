@@ -28,6 +28,7 @@ export declare class Router {
     private logger;
     private routes;
     execute(req: IncomingMessage, secured?: boolean): SparkusRouterResponse;
+    private static getFormattedPath;
     addController(controller: ControllerData): void;
     removeController(controller: ControllerData): void;
     private addRoute;

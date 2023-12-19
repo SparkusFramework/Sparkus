@@ -15,7 +15,7 @@
         "./core": "./dist/core/index.mjs",
         "./decorators": "./dist/decorators/index.mjs",
         "./utils": "./dist/utils/index.mjs",
-        ".": "./dist/index.mjs"
+        "./types": "./dist/types/index.mjs"
     },
     "keywords": [],
     "repository": {

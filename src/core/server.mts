@@ -1,9 +1,9 @@
 import { Logger } from "../utils/index.mjs";
 import { Router } from "./router.mjs";
 import * as http from "http";
-import { InjectLoggerClass } from "../decorators/logger.decorator.mjs";
+import { InitLoggerClass } from "../decorators/logger.decorator.mjs";
 
-@InjectLoggerClass()
+@InitLoggerClass()
 export class Server {
 
     private logger: Logger;

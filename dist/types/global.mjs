@@ -1,7 +1,7 @@
 export var SparkusDataType;
 (function (SparkusDataType) {
     SparkusDataType[SparkusDataType["Controller"] = 0] = "Controller";
-    SparkusDataType[SparkusDataType["Service"] = 1] = "Service";
-    SparkusDataType[SparkusDataType["Endpoint"] = 2] = "Endpoint";
-    SparkusDataType[SparkusDataType["Other"] = 3] = "Other";
+    SparkusDataType[SparkusDataType["Endpoint"] = 1] = "Endpoint";
+    SparkusDataType[SparkusDataType["Injectable"] = 2] = "Injectable";
+    SparkusDataType[SparkusDataType["Inject"] = 3] = "Inject";
 })(SparkusDataType || (SparkusDataType = {}));
