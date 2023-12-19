@@ -1,6 +1,6 @@
 {
     "name": "sparkus",
-    "version": "0.0.2b-alpha",
+    "version": "0.0.3",
     "description": "A robust and scalable ESM-based framework for large Node.js backends.",
     "author": "Maxandre <contact@maxand.re>",
     "license": "MIT",
@@ -15,20 +15,22 @@
         "./core": "./dist/core/index.mjs",
         "./decorators": "./dist/decorators/index.mjs",
         "./utils": "./dist/utils/index.mjs",
-        ".": "./dist/index.mjs"
+        "./types": "./dist/types/index.mjs"
     },
     "keywords": [],
     "repository": {
         "type": "git",
-        "url": "https://github.com/maxand-re/Sparkus.git"
+        "url": "https://github.com/SparkusFramework/Sparkus.git"
     },
     "bugs": {
-        "url": "https://github.com/maxand-re/Sparkus/issues"
+        "url": "https://github.com/SparkusFramework/Sparkus/issues"
     },
-    "homepage": "https://github.com/maxand-re/Sparkus#readme",
+    "homepage": "https://github.com/SparkusFramework/Sparkus#readme",
     "scripts": {
         "build": "tsc -p tsconfig.json",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "build:watch": "tsc -p tsconfig.json --watch",
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "prettier": "prettier --config .prettierrc -w ./src"
     },
     "devDependencies": {
         "@types/node": "^20.10.4",

@@ -4,8 +4,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-import { InjectLogger } from "../decorators/index.mjs";
-let Router = class Router {
+var Router_1;
+import { InitLoggerClass } from "../decorators/logger.decorator.mjs";
+let Router = Router_1 = class Router {
     logger;
     routes = new Map();
     execute(req, secured = false) {
@@ -15,7 +16,7 @@ let Router = class Router {
             status: 200,
             path: url.pathname,
             method: req.method,
-            type: "application/json",
+            type: "application/json"
         };
         const method = this.routes.get(request.method);
         if (method) {
@@ -27,7 +28,7 @@ let Router = class Router {
                     return {
                         status: request.status,
                         message: JSON.stringify(output),
-                        type: request.type,
+                        type: request.type
                     };
                 }
                 catch (error) {
@@ -37,9 +38,9 @@ let Router = class Router {
                         status: 500,
                         message: JSON.stringify({
                             code: 500,
-                            message: "Internal Server Error",
+                            message: "Internal Server Error"
                         }),
-                        type: "application/json",
+                        type: "application/json"
                     };
                 }
             }
@@ -49,9 +50,9 @@ let Router = class Router {
                     status: 404,
                     message: JSON.stringify({
                         code: 404,
-                        message: "Not Found",
+                        message: "Not Found"
                     }),
-                    type: "application/json",
+                    type: "application/json"
                 };
             }
         }
@@ -59,17 +60,22 @@ let Router = class Router {
         return {
             status: 501,
             message: JSON.stringify({ code: 501, message: "Not Implemented" }),
-            type: "application/json",
+            type: "application/json"
         };
+    }
+    static getFormattedPath(controllerPath, endpointPath) {
+        return (controllerPath.endsWith("/") ? controllerPath.slice(-1) : controllerPath) +
+            (endpointPath.length === 0 || endpointPath.startsWith("/") ? "" : "/") +
+            endpointPath;
     }
     addController(controller) {
         controller.endpoints.forEach((endpoint) => {
-            this.addRoute(controller.path + "/" + endpoint.path, endpoint.handler, controller.constructor, endpoint.method);
+            this.addRoute(Router_1.getFormattedPath(controller.path, endpoint.path), endpoint.handler, controller.constructor, endpoint.method);
         });
     }
     removeController(controller) {
         controller.endpoints.forEach((endpoint) => {
-            this.removeRoute(controller.path + "/" + endpoint.path, endpoint.method);
+            this.removeRoute(Router_1.getFormattedPath(controller.path, endpoint.path), endpoint.method);
         });
     }
     addRoute(path, handler, constructor, method) {
@@ -91,7 +97,7 @@ let Router = class Router {
         }
     }
 };
-Router = __decorate([
-    InjectLogger
+Router = Router_1 = __decorate([
+    InitLoggerClass()
 ], Router);
 export { Router };

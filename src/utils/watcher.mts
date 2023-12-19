@@ -1,40 +1,40 @@
-import { InjectLogger } from "../decorators/index.mjs";
 import { Logger } from "./logger.mjs";
+import { InitLoggerClass } from "../decorators/index.mjs";
+import { App } from "../core/index.mjs";
 
 import * as url from "url";
 import * as fs from "fs";
 import chokidar, { FSWatcher } from "chokidar";
-import { App } from "../core/index.mjs";
 import path from "node:path";
 
 const cwd = url.pathToFileURL(process.cwd() + "/");
 const watcherBaseURL = new URL(".sparkus/watcher/", cwd);
 
-@InjectLogger
+@InitLoggerClass()
 export class Watcher {
-    private watcher: FSWatcher;
-    private logger: Logger;
+
     private readonly cwdURL: URL;
+
+    private logger: Logger;
+    private watcher: FSWatcher;
 
     constructor(
         private readonly paths: string[],
-        private readonly cwd: string,
+        private readonly cwd: string | undefined
     ) {
-        this.cwdURL = cwd
-            ? url.pathToFileURL(cwd + "/")
-            : url.pathToFileURL(process.cwd() + "/");
+        this.cwdURL = url.pathToFileURL(cwd ?? process.cwd() + "/")
     }
 
     public init(app: App): void {
         this.watcher = chokidar.watch(this.paths, {
             cwd: this.cwd,
             persistent: true,
-            depth: 20,
+            depth: 20
         });
 
         this.watcher.on("ready", () => {
             this.logger.warn(
-                "Watcher enabled, please do not use in production.",
+                "Watcher enabled, please do not use in production."
             );
         });
 
@@ -46,13 +46,12 @@ export class Watcher {
 
             if (isUnloaded) {
                 this.logger.debug(`File "${url}" unloaded.`);
-                const {isLoaded, controller} = await app.loadFile(url);
 
-                if (isLoaded) {
-                    this.logger.info(`Controller "${controller.name}" successfully refreshed.`);
-                } else {
-                    this.logger.warn(`Can't load the file "${url}".`);
-                }
+                await app.loadFile(url);
+
+                await app.injectableManager.injectAllDependencies();
+
+                this.logger.info(`File "${url}" successfully refreshed.`);
             } else {
                 this.logger.warn(`Can't unload the file "${url}".`);
             }
@@ -65,15 +64,15 @@ export class Watcher {
 
         const base = new URL(Date.now() + "/", watcherBaseURL);
 
-        this.paths.forEach(currentPath => {
+        this.paths.forEach((currentPath) => {
             const folder = new URL(currentPath, cwd);
             const destination = new URL(currentPath, base);
 
             if (!fs.existsSync(destination))
                 fs.mkdirSync(destination, { recursive: true });
 
-            fs.cpSync(folder, destination, { recursive: true })
-        })
+            fs.cpSync(folder, destination, { recursive: true });
+        });
 
         return base;
     }
@@ -83,11 +82,13 @@ export class Watcher {
     }
 
     public async dynamicImport(url: URL): Promise<any> {
-
         const temp = this.createTemporaryFiles();
 
         try {
-            const relativePath = path.relative(this.cwdURL.pathname, url.pathname);
+            const relativePath = path.relative(
+                this.cwdURL.pathname,
+                url.pathname
+            );
             const randomised = new URL(relativePath, temp);
 
             return (await import(randomised.toString())).default;

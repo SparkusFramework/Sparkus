@@ -38,7 +38,7 @@ Here's a simple example of a Sparkus application:
 
 ```ts
 // ./app.ts
-import {App} from "sparkus/core";
+import { App } from "sparkus/core";
 
 // Bootstrap of your app
 new App({
@@ -56,28 +56,47 @@ new App({
 
 ```ts
 // ./src/controllers/account.controller.ts
-import {InjectLogger, Controller, GET, POST} from "sparkus/decorators";
-import {Logger} from "sparkus/utils";
+import { Controller, GET, Inject, InitLogger, POST } from "sparkus/decorators";
+import { Logger } from "sparkus/utils";
+import AccountService from "../services/account.service.js";
 
-@InjectLogger
-@Controller('/api/account')
+@Controller('/api/v1/account')
 export default class AccountController {
 
-  private logger: Logger;
+    @InitLogger() // Automatically initialize the logger
+    private logger: Logger;
 
-  @GET()
-  public index(): { hello: string } {
-    this.logger.info('The logger is automatically injected and configured with @InjectLogger');
-    return { hello: 'world!' };
-  }
+    @Inject() // Automatically inject the service "accountService"
+    private accountService: AccountService;
 
-  @POST()
-  public create(): { good: string } {
-    return { good: 'bye!' };
-  }
+    @GET() // /api/v1/account
+    public index(): any {
+        const users = this.accountService.findAllUsers();
+        return { hello: users };
+    }
+
+    @POST('/just/an/example') // /api/v1/account/just/an/example
+    public create(): any {
+        return { good: 'bye!' };
+    }
 
 }
 ```
+
+```ts
+// ./src/services/account.service.ts
+import { Injectable } from "sparkus/decorators";
+
+@Injectable('accountService')
+export default class AccountService {
+
+    public findAllUsers(): string[] {
+        return ["Max", "Jeff", "Maria"]
+    }
+
+}
+```
+
 
 ## Documentation
 

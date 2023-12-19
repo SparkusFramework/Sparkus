@@ -8,9 +8,9 @@ export interface SparkusLoggerConfig {
     name?: string;
 }
 export declare class Logger {
+    private name;
     static level: SparkusLoggerLevel;
-    private readonly name?;
-    constructor(config?: SparkusLoggerConfig);
+    constructor(name: string);
     debug(message: string): void;
     info(message: string): void;
     warn(message: string): void;

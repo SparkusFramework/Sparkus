@@ -7,9 +7,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { InjectLogger } from "../decorators/index.mjs";
 import { Router } from "./router.mjs";
 import * as http from "http";
+import { InitLoggerClass } from "../decorators/logger.decorator.mjs";
 let Server = class Server {
     port;
     router;
@@ -44,7 +44,7 @@ let Server = class Server {
     }
 };
 Server = __decorate([
-    InjectLogger,
+    InitLoggerClass(),
     __metadata("design:paramtypes", [Number, Router])
 ], Server);
 export { Server };

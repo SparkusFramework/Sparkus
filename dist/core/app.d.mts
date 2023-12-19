@@ -1,18 +1,5 @@
 import { SparkusLoggerLevel } from "../utils/index.mjs";
-import { ControllerData } from "../decorators/index.mjs";
-export declare enum SparkusDataType {
-    Controller = 0,
-    Service = 1,
-    Endpoint = 2
-}
-export interface SparkusClass extends Function {
-    _sparkus: SparkusData;
-    constructor: any;
-}
-export interface SparkusData {
-    type: SparkusDataType;
-    data: any;
-}
+import { InjectableManager } from "./managers/injectable.manager.mjs";
 interface BootstrapConfig {
     scan: string[];
     port?: number;
@@ -29,15 +16,14 @@ export declare class App {
     private readonly router;
     private readonly watcher;
     private readonly isWatcherEnabled;
-    private readonly urlControllerMap;
+    private readonly controllerManager;
+    private readonly _injectableManager;
     private logger;
     constructor(config: BootstrapConfig);
     start(): Promise<void>;
     private scanFolder;
     unloadFile(url: URL): Promise<boolean>;
-    loadFile(file: URL): Promise<{
-        isLoaded: boolean;
-        controller?: ControllerData;
-    }>;
+    loadFile(file: URL): Promise<void>;
+    get injectableManager(): InjectableManager;
 }
 export {};
