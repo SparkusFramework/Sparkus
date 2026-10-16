@@ -10,7 +10,7 @@
     "exports": {
         "./args": {
             "bun": "./src/args.ts",
-            "types": "./dist/args.d.ts",
+            "types": "./src/args.ts",
             "default": "./dist/args.js"
         }
     },

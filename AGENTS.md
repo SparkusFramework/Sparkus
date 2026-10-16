@@ -27,11 +27,13 @@ Instructions for anyone, human or agent, changing this repository. Read [ROADMAP
 bun run test
 ```
 
-Builds with `tsc -b`, then runs every test. The conformance suite spawns a real Node process: set `NODE_BIN` to a Node 22+ binary if `node` on the PATH is older.
+Builds the JS with `bun build` (`scripts/build.ts`), then runs every test. The conformance suite spawns a real Node process: set `NODE_BIN` to a Node 22+ binary if `node` on the PATH is older.
 
 ```bash
 bun run typecheck
 ```
+
+`bun check`: the same errors as `tsc`, several times faster, no build needed. Packages expose their sources as `"types"` during development; `tsc` only emits declaration files for publishing (`bun run build:types`).
 
 ```bash
 bun run check:deps

@@ -42,7 +42,7 @@ export class TestApp {
         }
 
         const response = await this.app.fetch(
-            new Request(new URL(options.url, "http://sparkus.test"), {
+            new Request(new URL(options.url, "http://sparkus.test").href, {
                 method: options.method ?? "GET",
                 headers,
                 body,

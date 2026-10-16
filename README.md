@@ -84,7 +84,7 @@ bun install
 bun run test
 ```
 
-`bun run test` builds every package, then runs unit tests and the conformance suite on four targets (in memory, Bun engine, Node engine under Bun, a real Node process; set `NODE_BIN` to pick the Node binary). `bun run typecheck` checks sources and tests, `bun run check:deps` enforces zero runtime dependencies, and `bun run bench` runs the [benchmark](./bench/README.md).
+`bun run test` builds every package with `bun build`, then runs unit tests and the conformance suite on four targets (in memory, Bun engine, Node engine under Bun, a real Node process; set `NODE_BIN` to pick the Node binary). `bun run typecheck` checks sources and tests with `bun check`, `bun run check:deps` enforces zero runtime dependencies, and `bun run bench` runs the [benchmark](./bench/README.md).
 
 ## License
 

@@ -24,8 +24,12 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - run: bun run check:deps
+      # Declarations are only built for publishing; make sure they still build.
+      - run: bun run build:types
+      # bun check: same errors as tsc, no build needed.
       - run: bun run typecheck
-      # Conformance runs every engine, including a real Node process (NODE_BIN).
-      - run: bun test ./packages ./tests
+      # Builds the JS with bun build, then runs every test. Conformance runs every
+      # engine, including a real Node process (NODE_BIN).
+      - run: bun run test
         env:
           NODE_BIN: node

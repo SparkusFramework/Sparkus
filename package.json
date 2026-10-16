@@ -16,10 +16,10 @@
         "spike"
     ],
     "scripts": {
-        "build": "tsc -b",
-        "clean": "tsc -b --clean",
-        "typecheck": "tsc -b && tsc -p tsconfig.test.json",
-        "test": "tsc -b && bun test ./packages ./tests",
+        "build": "bun scripts/build.ts",
+        "build:types": "tsc -b --force packages/sparkus packages/testing packages/cli",
+        "typecheck": "bun check -b && bun check -p tsconfig.test.json",
+        "test": "bun run build && bun test ./packages ./tests",
         "check:deps": "bun scripts/check-deps.ts",
         "bench": "bun run --cwd bench bench"
     },

@@ -23,6 +23,7 @@ Principes directeurs :
 | D8 | **Chiffres publiés mesurés sous Linux**, harnais reproductible dans `bench/`. | Les perfs réseau sous Windows ne représentent pas la prod. |
 | D9 | **Zéro dépendance à l'exécution** dans tous les paquets publiés : routeur, schémas, validation, sérialisation, logger, config, CLI (parsing d'arguments, watcher) sont faits maison. Seules les dépendances de dev (TypeScript) sont admises. Une exception exige une décision écrite ici, et reste un paquet optionnel (ex. moteur `uws`). Vérifié en CI. | Pas de risque supply chain, installs instantanés, bundle minimal pour le build natif, et un contrôle total sur la perf. |
 | D10 | **Une seule suite de conformité pour tous les moteurs** (`tests/conformance`). Un moteur n'est pris en charge que s'il la passe entière. | Le choix du moteur ne doit jamais changer le comportement d'une app. |
+| D11 | **Outillage Bun, `tsc` réduit aux déclarations.** Vérification de types : `bun check` (mêmes erreurs que `tsc`, sans build). JavaScript : `bun build`. En développement, les paquets exposent leurs sources comme `"types"` ; `tsc --emitDeclarationOnly` ne sert qu'à publier, et la publication fait pointer `"types"` vers `dist/*.d.ts`. | Boucle de dev plus rapide (36 ms de build, typecheck 4 à 6 fois plus rapide). Bun ne sait pas émettre de `.d.ts` (vérifié en 1.4.3), et les utilisateurs npm en ont besoin : `skipLibCheck` ne protège pas d'erreurs dans des sources `.ts` publiées. |
 
 ---
 
@@ -54,6 +55,7 @@ But : **valider le pari de perf avant de construire.**
 - [x] CI GitHub Actions (Ubuntu + Windows, Node 22 et 24) et contrôle D9 (`bun run check:deps`).
 - [x] Amorce du CLI : parseur d'arguments maison, `help`, `version`, `--json`, suggestions sur faute de frappe.
 - [ ] Revue par 4 agents experts en optimisation, qui prouvent chaque proposition par une mesure.
+- [ ] Outillage D11, à intégrer au merge des experts : nos sources doivent compiler sous la config de n'importe quel projet qui les importe (`/// <reference types="bun" />` dans `engine-bun`, typage du corps binaire dans `web.ts`), et le bench compile ses cibles avec `bun build` au lieu de `tsc`.
 
 Écarts assumés :
 
