@@ -4,3 +4,10 @@ node_modules
 SparkusJS.iml
 yarn.lock
 .sparkus
+# v1
+spike/dist
+bench/targets/*/dist
+bench/results
+packages/*/dist
+tests/*/dist
+*.tsbuildinfo

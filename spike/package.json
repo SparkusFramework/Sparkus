@@ -1,0 +1,23 @@
+{
+    "name": "@sparkus/spike",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Phase 0 prototype of the Sparkus v1 core (see ROADMAP.md).",
+    "type": "module",
+    "exports": {
+        ".": {
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "test": "bun test"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/node": "^24.0.0",
+        "typescript": "^5.9.3"
+    }
+}

@@ -1,0 +1,27 @@
+{
+    "name": "sparkus",
+    "version": "1.0.0-alpha.0",
+    "description": "The fastest decorator + DI backend framework for TypeScript. Runs on Bun and Node.",
+    "license": "MIT",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": ["dist", "src"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/SparkusFramework/Sparkus.git",
+        "directory": "packages/sparkus"
+    },
+    "keywords": ["framework", "http", "rest", "api", "bun", "node", "decorators", "dependency-injection"],
+    "dependencies": {
+        "@sparkus/core": "workspace:*",
+        "@sparkus/engine-bun": "workspace:*",
+        "@sparkus/engine-node": "workspace:*"
+    }
+}

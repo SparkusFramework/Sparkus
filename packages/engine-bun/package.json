@@ -1,0 +1,24 @@
+{
+    "name": "@sparkus/engine-bun",
+    "version": "1.0.0-alpha.0",
+    "description": "Sparkus HTTP engine on Bun.serve native routes.",
+    "license": "MIT",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "bun": "./src/index.ts",
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": ["dist", "src"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/SparkusFramework/Sparkus.git",
+        "directory": "packages/engine-bun"
+    },
+    "dependencies": {
+        "@sparkus/core": "workspace:*"
+    }
+}

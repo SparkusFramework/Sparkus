@@ -1,0 +1,10 @@
+{
+    "name": "@sparkus/conformance",
+    "private": true,
+    "type": "module",
+    "description": "One HTTP behavior suite, run against every engine: in memory, Bun, Node under Bun, and a real Node process.",
+    "dependencies": {
+        "sparkus": "workspace:*",
+        "@sparkus/testing": "workspace:*"
+    }
+}

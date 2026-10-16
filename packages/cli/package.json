@@ -1,0 +1,26 @@
+{
+    "name": "@sparkus/cli",
+    "version": "1.0.0-alpha.0",
+    "description": "The sparkus command line: project tooling for humans and agents. Zero dependencies.",
+    "license": "MIT",
+    "type": "module",
+    "bin": {
+        "sparkus": "./dist/main.js"
+    },
+    "exports": {
+        "./args": {
+            "bun": "./src/args.ts",
+            "types": "./dist/args.d.ts",
+            "default": "./dist/args.js"
+        }
+    },
+    "files": ["dist"],
+    "scripts": {
+        "build:native": "bun build --compile --bytecode --minify src/main.ts --outfile dist/sparkus"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/SparkusFramework/Sparkus.git",
+        "directory": "packages/cli"
+    }
+}

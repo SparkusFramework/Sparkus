@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "CommonJS",
+        "moduleResolution": "Node10",
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "strict": true,
+        "strictPropertyInitialization": false,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "types": ["node"],
+        "rootDir": "src",
+        "outDir": "dist"
+    },
+    "include": ["src"]
+}

@@ -1,44 +1,35 @@
 {
-    "name": "sparkus",
-    "version": "0.0.3b",
-    "description": "A robust and scalable ESM-based framework for large Node.js backends.",
-    "author": "Maxandre <contact@maxand.re>",
-    "license": "MIT",
+    "name": "sparkus-monorepo",
+    "private": true,
     "type": "module",
-    "main": "dist/index.mjs",
-    "types": "dist/index.d.mts",
-    "private": false,
-    "files": [
-        "dist"
-    ],
-    "exports": {
-        "./core": "./dist/core/index.mjs",
-        "./decorators": "./dist/decorators/index.mjs",
-        "./utils": "./dist/utils/index.mjs",
-        "./types": "./dist/types/index.mjs"
-    },
-    "keywords": ["framework", "rest", "api", "robust", "scalable", "server"],
+    "description": "Sparkus v1: the fastest decorator + DI backend framework for TypeScript, built for Bun and Node.",
+    "license": "MIT",
+    "author": "Maxandre <contact@maxand.re>",
     "repository": {
         "type": "git",
         "url": "https://github.com/SparkusFramework/Sparkus.git"
     },
-    "bugs": {
-        "url": "https://github.com/SparkusFramework/Sparkus/issues"
-    },
-    "homepage": "https://github.com/SparkusFramework/Sparkus#readme",
+    "workspaces": [
+        "packages/*",
+        "tests/*",
+        "bench",
+        "spike"
+    ],
     "scripts": {
-        "build": "tsc -p tsconfig.json",
-        "build:watch": "tsc -p tsconfig.json --watch",
-        "test": "echo \"Error: no test specified\" && exit 1",
-        "prettier": "prettier --config .prettierrc -w ./src"
+        "build": "tsc -b",
+        "clean": "tsc -b --clean",
+        "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+        "test": "tsc -b && bun test ./packages ./tests",
+        "check:deps": "bun scripts/check-deps.ts",
+        "bench": "bun run --cwd bench bench"
     },
     "devDependencies": {
-        "@types/node": "^20.10.4",
-        "prettier": "3.1.1",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.3.3"
+        "@types/bun": "^1.3.0",
+        "@types/node": "^24.0.0",
+        "typescript": "^5.9.3"
     },
-    "dependencies": {
-        "chokidar": "^3.5.3"
+    "engines": {
+        "bun": ">=1.4.0",
+        "node": ">=22.0.0"
     }
 }
