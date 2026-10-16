@@ -8,11 +8,16 @@ function decode(value: string): string {
 }
 
 /**
- * Parses a query string (without the leading "?"). The first occurrence of a
- * key wins. Null prototype, so keys like "__proto__" are harmless.
+ * Query objects inherit from an empty null-prototype object, so keys like
+ * "__proto__" or "toString" are plain own properties. Not `Object.create(null)`:
+ * V8 creates those in dictionary mode: ~4x slower to fill under Node 24.
  */
+const Query = function () {} as unknown as new () => Record<string, string>;
+Query.prototype = Object.create(null);
+
+/** Parses a query string (without the leading "?"). The first occurrence of a key wins. */
 export function parseQuery(qs: string): Record<string, string | undefined> {
-    const out: Record<string, string> = Object.create(null);
+    const out = new Query();
     let start = 0;
 
     while (start < qs.length) {
