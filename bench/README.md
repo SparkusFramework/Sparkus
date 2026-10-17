@@ -51,6 +51,12 @@ bun run bench --targets sparkus-bun,sparkus-node --scenarios hello,params-query,
 
 Coût : 2 cibles × 3 scénarios × 5 rounds × ~9 s ≈ 5 min de verrou par moteur. Une seule cible (`--targets sparkus-node`) divise par deux.
 
+Autres outils (tous sous le verrou machine) :
+
+- `bun run.ts --targets sparkus-pipeline-bun,sparkus-pipeline-node --scenarios pipe-none,pipe-guard,...` : coût des guards et intercepteurs sur les vrais moteurs. `error-404` et `error-400` (floods de requêtes en erreur) marchent sur toutes les cibles. Ces cibles et scénarios ne tournent que si on les nomme.
+- `bun startup.ts [--runs 10] [--routes 100,1000]` : démarrage à froid (spawn → première réponse 200) et RSS, petites apps et apps générées de N routes (`targets/large/`).
+- `bun with-lock.ts -- bun micro/pipeline.js [coreDist]`, `... micro/validator.js` (ou `node` à la place de `bun`) : micro-benchs en process du pipeline compilé et de la validation (contre TypeBox et ajv). Ils refusent de tourner sans le verrou.
+
 ## Méthode
 
 - **Rounds entrelacés.** Chaque round mesure chaque (cible, scénario) une fois. L'ordre de base est tiré au hasard, puis tourné et inversé un round sur deux : chaque cible passe tôt et tard aussi souvent que les autres.
