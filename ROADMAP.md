@@ -144,6 +144,12 @@ Contre-mesure en 5 rounds, ratios appariés (`bench/compare.ts`, aucune mesure b
 
 Critère de la phase 0 après la phase 3 : Sparkus/Bun à moins de 10 % de `Bun.serve` (94 à 99 %) ; **à égalité avec Elysia** sur `hello` et `params-query`, devant sur `post-validate` (le critère « devant Elysia » n'est donc prouvé que là) ; Sparkus/Node nettement devant Fastify. Avec toutes ses options de production, Sparkus/Node perd 6 à 7 % contre Fastify *sans aucune option*, et reste à son niveau sur `post-validate`.
 
+**Options de prod sous Node, décomposées** (`hello`, 5 rounds, toutes prouvées) : logs −12,9 %, headers de sécurité −8,1 %, request id −7,7 %, CORS −4,2 %. Deux corrections, mesurées en A/B contre le commit précédent ([rapport](bench/reference/2026-10-17-ab-node-raw-headers.md)) :
+- Le moteur Node lit un header de requête dans `rawHeaders` au lieu de `req.headers`, que Node construit en entier à la première lecture.
+- Plus de listener `close` quand l'observateur n'a rien à finir (headers seuls).
+
+Résultat : chemin nu **+2,1 % (`hello`) et +2,0 % (`params-query`), prouvés** ; profils observés ≈ (médianes de +0,8 à +3,6 %, 4 mesures bruitées). L'écart restant de Sparkus/Node avec toutes ses options face à Fastify sans aucune option (−6 à −7 % sur `hello` et `params-query`) est le prix des fonctions de prod elles-mêmes : Fastify n'en a aucune active dans cette comparaison.
+
 **Conformité aux décisions.** La phase 3 relue décision par décision :
 
 | # | Tenu ? | Comment |
