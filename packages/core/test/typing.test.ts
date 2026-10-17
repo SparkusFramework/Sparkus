@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Controller, Get, t, type Ctx } from "../src/index.js";
+import { Controller, Get, Post, UseGuards, t, type Ctx, type Guard } from "../src/index.js";
 
 const GetPost = {
     params: t.object({ id: t.integer(), slug: t.string() }),
@@ -50,3 +50,36 @@ class WithResponse {
 }
 
 test("response schemas type the handler's result", () => expect(WithResponse).toBeDefined());
+
+interface AuthState {
+    user: { name: string };
+}
+
+class Auth implements Guard {
+    canActivate(ctx: Ctx) {
+        ctx.state.user = { name: "Ada" };
+        return true;
+    }
+}
+
+const CreatePost = { body: t.object({ title: t.string() }) };
+
+@Controller("/posts")
+@UseGuards(Auth)
+class WithState {
+    @Post("", CreatePost)
+    create(ctx: Ctx<typeof CreatePost, AuthState>) {
+        const name: string = ctx.state.user.name;
+        // @ts-expect-error state is typed
+        const wrong: number = ctx.state.user.name;
+        return { title: ctx.body.title, by: name, wrong };
+    }
+
+    @Get("/untyped")
+    untyped(ctx: Ctx) {
+        const user: unknown = ctx.state.user;
+        return { user };
+    }
+}
+
+test("the second Ctx parameter types state", () => expect(WithState).toBeDefined());

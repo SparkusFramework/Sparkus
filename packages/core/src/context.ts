@@ -27,10 +27,11 @@ export type HandlerResult<O extends RouteOptions> = O["response"] extends Schema
     : unknown;
 
 /**
- * Request context received by handlers, guards and interceptors. `body` is
- * typed from the route's schema: `ctx: Ctx<typeof CreateUser>`.
+ * Request context received by handlers, guards and interceptors. `params`,
+ * `query` and `body` are typed from the route's schemas: `ctx: Ctx<typeof CreateUser>`.
+ * The second parameter types `state`: `Ctx<typeof CreateUser, { user: User }>`.
  */
-export interface Ctx<O extends RouteOptions = RouteOptions> {
+export interface Ctx<O extends RouteOptions = RouteOptions, S extends object = Record<string, unknown>> {
     /** HTTP method, uppercase. */
     readonly method: string;
     /** Path without the query string, as received (not decoded). */
@@ -47,8 +48,11 @@ export interface Ctx<O extends RouteOptions = RouteOptions> {
     status: number;
     /** Sets a response header. */
     setHeader(name: string, value: string): void;
-    /** Per-request storage shared by guards, interceptors and the handler (e.g. the authenticated user). */
-    readonly state: Record<string, unknown>;
+    /**
+     * Per-request storage shared by guards, interceptors and the handler (e.g. the authenticated
+     * user). Typed by `Ctx`'s second parameter; not checked at runtime: the guard that fills it must run.
+     */
+    readonly state: S;
 }
 
 /** What an engine's context provides on top of `Ctx`. Engines implement it; applications never see it. */

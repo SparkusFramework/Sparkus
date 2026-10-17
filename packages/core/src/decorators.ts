@@ -30,7 +30,8 @@ function route(method: HttpMethod) {
     const decorator = `@${method[0]}${method.slice(1).toLowerCase()}()`;
     return function <O extends RouteOptions = {}>(path = "", options?: O) {
         return function <This>(
-            value: (this: This, ctx: Ctx<O>) => HandlerResult<O>,
+            // Any state type: the handler declares what its guards put there (Ctx<O, { user: User }>).
+            value: (this: This, ctx: Ctx<O, any>) => HandlerResult<O>,
             context: ClassMethodDecoratorContext<This>,
         ): void {
             if (context.static || context.private) {

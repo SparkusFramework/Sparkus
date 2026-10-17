@@ -55,7 +55,7 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 
 ## Ctx (handlers, guards, interceptors)
 
-`method`, `path`, `params`, `query`, `body`, `header(name)`, `status` (settable), `setHeader(name, value)`, `state` (per-request object shared with guards and interceptors).
+`method`, `path`, `params`, `query`, `body`, `header(name)`, `status` (settable), `setHeader(name, value)`, `state` (per-request object shared with guards and interceptors). Type `state` with the second parameter: `ctx: Ctx<typeof CreatePost, { user: User }>` (not checked at runtime: the guard that sets it must run on that route).
 
 Return value: object/array/number/null → JSON; string → text/plain; `Uint8Array` → octet-stream; `undefined` → 204 (or the route status if not 200); a `Response` is sent as is. Handlers may be async.
 
