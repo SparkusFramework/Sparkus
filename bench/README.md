@@ -135,4 +135,4 @@ Publier avec le JSON brut, la sortie de `lscpu`, `uname -a` et les versions (Bun
 - `sparkus-bun` est au plafond sur `hello` et `params-query` (≈ bun-raw), mais à **95 %** sur `post-validate` (bun-raw +5,2 %, et spike-bun devant lui).
 - `sparkus-node` est au plafond sur `hello`, à **91 %** sur `params-query` et **97 %** sur `post-validate` (node-raw devant, prouvé).
 - `spike-node` dépasse `node-raw` sur `hello` (103 %) et `sparkus-node` de 2,8 % (prouvé) : `node-raw` n'est pas un vrai plafond sous Node, et le moteur Node v1 a régressé sur `hello` par rapport au prototype.
-- Sparkus devance Elysia (+6,4 % sur `post-validate`, ≈ ailleurs) et Fastify (+15 à +20 %).
+- Sparkus devance Elysia (+6,4 % sur `post-validate`, ≈ ailleurs) et Fastify (+14 % sur `hello`, +6,2 % sur `params-query`, +19,8 % sur `post-validate`).
