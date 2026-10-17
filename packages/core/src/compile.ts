@@ -91,7 +91,15 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
     const routes: CompiledRoute[] = [];
     const declared = new Map<string, string>();
 
+    const listed = new Set<Class<object>>();
     for (const controller of options.controllers) {
+        if (listed.has(controller)) {
+            throw new SparkusError(
+                ErrorCode.DuplicateRoute,
+                `${controller.name} is listed twice in "controllers". List each controller once.`,
+            );
+        }
+        listed.add(controller);
         const meta = Object.hasOwn(controller, CONTROLLER) ? ((controller as any)[CONTROLLER] as ControllerMeta) : undefined;
         if (meta === undefined) {
             throw new SparkusError(

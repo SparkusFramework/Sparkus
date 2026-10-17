@@ -156,3 +156,14 @@ test("isJsonContentType", () => {
         expect(isJsonContentType(no)).toBe(false);
     }
 });
+
+test("a controller listed twice is named as such", async () => {
+    @Controller("/x")
+    class Twice {
+        @Get("/")
+        a() {}
+    }
+    expect(createApp({ controllers: [Twice, Twice] }).init()).rejects.toThrow(
+        '[SPK1003] Twice is listed twice in "controllers". List each controller once.',
+    );
+});

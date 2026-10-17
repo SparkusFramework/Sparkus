@@ -18,7 +18,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 |---|---|---|
 | SPK1001 | `inject()` called outside a construction managed by Sparkus. | Call `inject()` in a field initializer or constructor of a controller, service, guard or interceptor. Never at module level or inside a method. |
 | SPK1002 | Dependency cycle. The message shows the cycle and the path that reached it. | Move the logic both classes need into a third service that neither depends on. |
-| SPK1003 | The same method and path are declared twice. The message names both handlers. | Remove one, or change its path or method. |
+| SPK1003 | The same method and path are declared twice (the message names both handlers), or a controller is listed twice in `controllers`. | Remove one, or change its path or method. |
 | SPK1004 | A class in `controllers` has no `@Controller()`. | Add `@Controller("/prefix")`, or remove it from `controllers` (services are never listed: they are created by `inject()`). |
 | SPK1005 | A route decorator is on a static or private method. | Route handlers are public instance methods. |
 | SPK1006 | Two routes use different parameter names at the same position (`/users/:id` and `/users/:userId/posts`). | Use the same name at the same position. |
