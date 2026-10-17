@@ -36,6 +36,16 @@ export const extraTargets: Target[] = [
     // what they cost, measured against sparkus-bun / sparkus-node in the same session.
     { name: "sparkus-prod-bun", runtime: "bun", entry: "targets/sparkus/server.ts", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
     { name: "sparkus-prod-node", runtime: "node", entry: "targets/sparkus/dist/server.js", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
+    // One production option at a time (Bun), to see what each costs.
+    ...["logs", "security", "requestid", "cors"].map(
+        (option): Target => ({
+            name: `sparkus-${option}-bun`,
+            runtime: "bun",
+            entry: "targets/sparkus/server.ts",
+            role: "sparkus",
+            env: { SPARKUS_BENCH_OPTIONS: option },
+        }),
+    ),
     // Fastify with its logger (pino, one line at the start and one at the end of each request).
     { name: "fastify-logger", runtime: "node", entry: "targets/fastify/server.js", role: "competitor", env: { FASTIFY_LOGGER: "1" } },
 ];

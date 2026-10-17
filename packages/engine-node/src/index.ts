@@ -263,7 +263,7 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
 
     return (req, res, params, path, rawQuery) => {
         const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
-        observer.start(ctx, routePath);
+        observer.start(ctx, routePath, true);
         res.once("close", () => observer.finish(ctx, res.statusCode, routePath));
         const span = ctx.extras.span;
         dispatch(res, ctx, runtime, activate !== undefined && span !== undefined ? () => activate(span, () => run(ctx)) : () => run(ctx));
@@ -279,7 +279,7 @@ function sendUnrouted(req: IncomingMessage, res: ServerResponse, path: string, r
         return;
     }
     const ctx = new NodeContext(req, res, path, NO_PARAMS, rawQuery, 404, runtime);
-    observer.start(ctx, undefined);
+    observer.start(ctx, undefined, true);
     const preflight = observer.preflight(ctx, allow);
     if (preflight !== null) {
         res.writeHead(preflight.status, preflight.headers);

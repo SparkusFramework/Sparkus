@@ -293,6 +293,23 @@ export class Logger {
         stdoutSink.flush();
     }
 
+    /**
+     * Engine fast path (request log lines): `json` is the fields already serialized
+     * (`,"key":value...`) and `msg` needs no escaping; `fields` builds them for pretty lines.
+     * The caller checked the level with `enabled()`.
+     */
+    emitPrebuilt(level: LogLevel, msg: string, json: string, fields: () => LogFields): void {
+        try {
+            this.root.write(
+                this.root.pretty
+                    ? this.prettyLine(level, msg, fields())
+                    : `{"level":"${level}","time":${Date.now()}${this.bound},"msg":"${msg}"${json}}`,
+            );
+        } catch {
+            // Logging never breaks the request that logs.
+        }
+    }
+
     private emit(level: LogLevel, msg: string, fields: LogFields | undefined): void {
         const text = typeof msg === "string" ? msg : String(msg);
         try {

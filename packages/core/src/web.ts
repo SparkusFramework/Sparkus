@@ -168,6 +168,65 @@ export function toResponse(
 
 export type WebHandler = (request: Request, params: Readonly<Record<string, string>>) => Response | Promise<Response>;
 
+/** Copies headers into `target`; with `keep`, a header already there stays (a handler's Response wins). */
+function setAll(target: Headers, headers: Readonly<Record<string, string>> | null, keep: boolean): void {
+    if (headers === null) return;
+    for (const name in headers) if (!keep || !target.has(name)) target.set(name, headers[name]!);
+}
+
+/**
+ * `toResponse` for an observed request: the app's headers for every response (security, CORS),
+ * then the context's. Bun builds a Response's headers from a plain object at ~75 ns per entry, but
+ * copies a Headers object in ~50 ns in all: the common ones are built once, then copied.
+ */
+export function toObservedResponse(value: unknown, ctx: WebContext, base: Headers): Response {
+    const own = ctx.responseHeaders;
+    const status = ctx.status;
+
+    if (typeof value === "object" && value !== null) {
+        if (value instanceof Response) {
+            const target = value.headers;
+            base.forEach((header, name) => {
+                if (!target.has(name)) target.set(name, header);
+            });
+            setAll(target, own, true);
+            return value;
+        }
+        if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
+            const headers = new Headers(base);
+            headers.set("content-type", BINARY_TYPE);
+            setAll(headers, own, false);
+            return new Response(value as unknown as ConstructorParameters<typeof Response>[0], { status, headers });
+        }
+    } else if (value === undefined) {
+        const headers = new Headers(base);
+        setAll(headers, own, false);
+        return new Response(null, { status: status === 200 ? 204 : status, headers });
+    } else if (typeof value === "string") {
+        const headers = new Headers(base);
+        headers.set("content-type", TEXT_TYPE);
+        setAll(headers, own, false);
+        return new Response(value, { status, headers });
+    }
+
+    const headers = new Headers(base);
+    setAll(headers, own, false);
+    return Response.json(value, { status, headers });
+}
+
+/** `errorResponse` for an observed request: the app's headers, the context's, then the error's own. */
+function observedErrorResponse(rendered: RenderedError, ctx: WebContext, base: Headers | null): Response {
+    if (base === null) return errorResponse(rendered, ctx.responseHeaders);
+    const headers = new Headers(base);
+    setAll(headers, ctx.responseHeaders, false);
+    setAll(headers, rendered.headers, false);
+    return new Response(rendered.body, { status: rendered.status, headers });
+}
+
+function failed(error: unknown, ctx: WebContext, runtime: AppRuntime): Response {
+    return errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders);
+}
+
 /** Request -> Response handler for one route. Errors never escape: they become problem+json responses. */
 export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): WebHandler {
     if (runtime.observer !== null) return createObservedHandler(route, runtime, runtime.observer);
@@ -177,21 +236,23 @@ export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): Web
 
     return (request, params) => {
         const ctx = new WebContext(request, params, status, runtime);
-        const fail = (error: unknown) => errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders);
         try {
             const out = run(ctx);
             if (out instanceof Promise) {
-                return out.then((value) => {
-                    try {
-                        return toResponse(value, ctx, init, status);
-                    } catch (error) {
-                        return fail(error);
-                    }
-                }, fail);
+                return out.then(
+                    (value) => {
+                        try {
+                            return toResponse(value, ctx, init, status);
+                        } catch (error) {
+                            return failed(error, ctx, runtime);
+                        }
+                    },
+                    (error) => failed(error, ctx, runtime),
+                );
             }
             return toResponse(out, ctx, init, status);
         } catch (error) {
-            return fail(error);
+            return failed(error, ctx, runtime);
         }
     };
 }
@@ -201,30 +262,40 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
     const { run, status, path } = route;
     const init: ResponseInit | undefined = status === 200 ? undefined : { status };
     const activate = observer.activate;
+    const base = observer.baseHeaders;
+    const respond = (value: unknown, ctx: WebContext): Response =>
+        base === null ? toResponse(value, ctx, init, status) : toObservedResponse(value, ctx, base);
+    const fail = (error: unknown, ctx: WebContext): Response => {
+        const response = observedErrorResponse(runtime.renderError(error, ctx), ctx, base);
+        observer.finish(ctx, response.status, path);
+        return response;
+    };
 
     return (request, params) => {
         const ctx = new WebContext(request, params, status, runtime);
-        observer.start(ctx, path);
-        const done = (response: Response) => {
-            observer.finish(ctx, response.status, path);
-            return response;
-        };
-        const fail = (error: unknown) => done(errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders));
+        observer.start(ctx, path, false);
         try {
             const span = ctx.extras.span;
             const out = activate !== undefined && span !== undefined ? activate(span, () => run(ctx)) : run(ctx);
             if (out instanceof Promise) {
-                return out.then((value) => {
-                    try {
-                        return done(toResponse(value, ctx, init, status));
-                    } catch (error) {
-                        return fail(error);
-                    }
-                }, fail);
+                return out.then(
+                    (value) => {
+                        try {
+                            const response = respond(value, ctx);
+                            observer.finish(ctx, response.status, path);
+                            return response;
+                        } catch (error) {
+                            return fail(error, ctx);
+                        }
+                    },
+                    (error) => fail(error, ctx),
+                );
             }
-            return done(toResponse(out, ctx, init, status));
+            const response = respond(out, ctx);
+            observer.finish(ctx, response.status, path);
+            return response;
         } catch (error) {
-            return fail(error);
+            return fail(error, ctx);
         }
     };
 }
@@ -243,14 +314,15 @@ export function unroutedResponse(request: Request, method: string, path: string,
         return errorResponse(allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow));
     }
     const ctx = new WebContext(request, NO_PARAMS, 404, runtime);
-    observer.start(ctx, undefined);
+    observer.start(ctx, undefined, false);
     const preflight = observer.preflight(ctx, allow);
     const response =
         preflight !== null
             ? bareResponse(preflight)
-            : errorResponse(
+            : observedErrorResponse(
                   allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow),
-                  ctx.responseHeaders,
+                  ctx,
+                  observer.baseHeaders,
               );
     observer.finish(ctx, response.status, undefined);
     return response;

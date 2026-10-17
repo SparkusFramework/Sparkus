@@ -151,7 +151,9 @@ function originTest(origin: CorsOptions["origin"]): (origin: string) => boolean 
 
 export class Observer {
     /** Headers every response starts with (security headers, static CORS headers), or null. */
-    private readonly base: Readonly<Record<string, string>> | null;
+    readonly base: Readonly<Record<string, string>> | null;
+    /** The same, as a Headers object to copy (web responses). */
+    readonly baseHeaders: Headers | null;
     private readonly allowOrigin: ((origin: string) => boolean) | null;
     private readonly cors: CorsOptions | undefined;
     /** `access-control-expose-headers` for an allowed origin, when origins are listed. */
@@ -197,6 +199,7 @@ export class Observer {
         this.exposed = cors === undefined || exposed.length === 0 ? null : exposed.join(", ");
         if (cors?.origin === "*" && this.exposed !== null) base["access-control-expose-headers"] = this.exposed;
         this.base = Object.keys(base).length === 0 ? null : Object.freeze(base);
+        this.baseHeaders = this.base === null ? null : new Headers(this.base);
         this.echo = options.echoRequestId;
         const http = options.log.child("http");
         // Levels are fixed per module: a disabled request log costs nothing per request.
@@ -227,10 +230,14 @@ export class Observer {
         );
     }
 
-    /** Called once the route is known (undefined: no route). Sets the response headers to start with. */
-    start(ctx: RequestContext, route: string | undefined): void {
+    /**
+     * Called once the route is known (undefined: no route). Sets the response headers to start
+     * with: those of this request (CORS for its origin, request id), and with `withBase` the
+     * headers of every response too (engines that do not apply `baseHeaders` themselves).
+     */
+    start(ctx: RequestContext, route: string | undefined, withBase: boolean): void {
         if (this.timed) ctx.extras.startTime = performance.now();
-        let headers: Record<string, string> | null = this.base === null ? null : { ...this.base };
+        let headers: Record<string, string> | null = withBase && this.base !== null ? { ...this.base } : null;
         if (this.allowOrigin !== null) {
             const origin = ctx.header("origin");
             if (origin !== undefined && this.allowOrigin(origin)) {
@@ -261,8 +268,9 @@ export class Observer {
     preflight(ctx: RequestContext, allow: string | null): BareResponse | null {
         if (this.cors === undefined || allow === null || ctx.method !== "OPTIONS") return null;
         if (ctx.header("access-control-request-method") === undefined) return null;
-        const headers = ctx.responseHeaders ?? {};
-        if (headers["access-control-allow-origin"] !== undefined) {
+        const headers: Record<string, string> = { ...this.base, ...ctx.responseHeaders };
+        // Origin "*" (no test) allows every origin; a list allowed this one if start() said so.
+        if (this.allowOrigin === null || headers["access-control-allow-origin"] !== undefined) {
             headers["access-control-allow-methods"] = this.cors.methods?.join(", ") ?? allow;
             const asked = this.cors.allowedHeaders?.join(", ") ?? ctx.header("access-control-request-headers");
             if (asked !== undefined && asked.length > 0) headers["access-control-allow-headers"] = asked;
@@ -278,18 +286,7 @@ export class Observer {
         const extras = ctx.extras;
         if (this.timed) {
             const ms = performance.now() - extras.startTime;
-            if (this.http !== null) {
-                const method = ctx.method;
-                const path = ctx.path;
-                this.http.info(`${method} ${path} ${status}`, {
-                    reqId: ctx.requestId,
-                    method,
-                    path,
-                    route,
-                    status,
-                    ms: Math.round(ms * 100) / 100,
-                });
-            }
+            if (this.http !== null) logRequest(this.http, ctx, status, route, Math.round(ms * 100) / 100);
             if (this.duration !== undefined) {
                 const attributes: Attributes = {
                     "http.request.method": KNOWN_METHODS.has(ctx.method) ? ctx.method : "_OTHER",
@@ -311,6 +308,21 @@ export class Observer {
             span.end();
         }
     }
+}
+
+/**
+ * The request log line, serialized by hand: ~90 ns instead of ~500 ns for the generic field loop.
+ * Request ids are safe tokens (validated or generated), methods are HTTP tokens: no escaping.
+ */
+function logRequest(http: Logger, ctx: RequestContext, status: number, route: string | undefined, ms: number): void {
+    const method = KNOWN_METHODS.has(ctx.method) ? ctx.method : JSON.stringify(ctx.method).slice(1, -1);
+    const path = JSON.stringify(ctx.path);
+    const msg = `${method} ${path.slice(1, -1)} ${status}`;
+    const json =
+        `,"reqId":"${ctx.requestId}","method":"${method}","path":${path}` +
+        (route === undefined ? "" : `,"route":${JSON.stringify(route)}`) +
+        `,"status":${status},"ms":${ms}`;
+    http.emitPrebuilt("info", msg, json, () => ({ reqId: ctx.requestId, method: ctx.method, path: ctx.path, route, status, ms }));
 }
 
 function lowerKeys<T>(record: Readonly<Record<string, T>>): Record<string, T> {

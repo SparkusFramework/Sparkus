@@ -75,15 +75,18 @@ class UserController {
 }
 
 // SPARKUS_BENCH_PROFILE=production (targets sparkus-prod-*): the options of a production app.
+// SPARKUS_BENCH_OPTIONS=logs,security,requestid,cors turns on some of them, to find what costs.
 // The bench sends no Origin header: CORS costs its check, not its headers.
-const production = process.env.SPARKUS_BENCH_PROFILE === "production";
+const chosen = new Set(
+    process.env.SPARKUS_BENCH_PROFILE === "production"
+        ? ["logs", "security", "requestid", "cors", "health"]
+        : (process.env.SPARKUS_BENCH_OPTIONS ?? "").split(",").filter(Boolean),
+);
 await createApp({
     controllers: [HelloController, UserController],
-    ...(production && {
-        logger: { requests: true },
-        securityHeaders: true,
-        requestId: true,
-        cors: { origin: ["https://app.example.com"] },
-        health: true,
-    }),
+    ...(chosen.has("logs") && { logger: { requests: true } }),
+    ...(chosen.has("security") && { securityHeaders: true }),
+    ...(chosen.has("requestid") && { requestId: true }),
+    ...(chosen.has("cors") && { cors: { origin: ["https://app.example.com"] } }),
+    ...(chosen.has("health") && { health: true }),
 }).listen({ port: PORT, hostname: HOST });
