@@ -21,6 +21,7 @@ import {
     type OnInit,
     type OnShutdown,
 } from "sparkus";
+import { z } from "zod";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -301,7 +302,140 @@ class TypedController {
     }
 }
 
-export const controllers = [RootController, UserController, FileController, AdminController, TypedController];
+const Profile = {
+    body: t.object({
+        name: t.string(),
+        address: t.optional(t.object({ city: t.string() })),
+        links: t.optional(t.array(t.object({ url: t.string() }))),
+        tags: t.optional(t.array(t.string())),
+    }),
+};
+
+const PublicUser = {
+    response: t.object({
+        id: t.integer(),
+        name: t.string(),
+        nickname: t.optional(t.string()),
+        address: t.object({ city: t.string() }),
+        roles: t.array(t.object({ name: t.string() })),
+    }),
+};
+
+/** What a database would return: more than the API may show. */
+function loadEntity() {
+    return {
+        id: 1,
+        name: "Ada",
+        passwordHash: "$argon2id$secret",
+        address: { city: "London", street: "12 private road" },
+        roles: [
+            { name: "admin", grantedBy: "root" },
+            { name: "author", grantedBy: "admin" },
+        ],
+    };
+}
+
+const Nullable = {
+    body: t.object({ nick: t.nullable(t.string()), manager: t.nullable(t.object({ name: t.string() })) }),
+    response: t.object({ nick: t.nullable(t.string()), manager: t.nullable(t.object({ name: t.string() })) }),
+};
+
+@Controller("/schema")
+class SchemaController {
+    @Post("/nullable", Nullable)
+    nullable(ctx: Ctx<typeof Nullable>) {
+        // The response schema filters what the body schema already filtered, and keeps null.
+        return { ...ctx.body, echoed: true };
+    }
+
+    @Post("/body", Profile)
+    body(ctx: Ctx<typeof Profile>) {
+        return { keys: Object.keys(ctx.body), body: ctx.body, prototype: Object.getPrototypeOf(ctx.body) === Object.prototype };
+    }
+
+    @Get("/entity", PublicUser)
+    entity() {
+        return loadEntity();
+    }
+
+    @Get("/entity-async", PublicUser)
+    async entityAsync() {
+        await delay(1);
+        return loadEntity();
+    }
+
+    @Get("/entity-wrapped", PublicUser)
+    @UseInterceptors(envelope)
+    entityWrapped() {
+        return loadEntity();
+    }
+
+    @Get("/entity-raw", PublicUser)
+    entityRaw(): Response {
+        return new Response('{"raw":true}', { headers: { "content-type": "application/json" } });
+    }
+
+    @Get("/mismatch", PublicUser)
+    mismatch() {
+        // A cast hides the bug from the compiler; the projection still refuses to guess.
+        return { ...loadEntity(), roles: "admin" } as unknown as ReturnType<typeof loadEntity>;
+    }
+}
+
+// Standard Schema: the same features with Zod schemas instead of t.
+const ZodCreate = {
+    body: z.object({
+        name: z.string().min(1),
+        age: z.number().int().min(0),
+        address: z.object({ city: z.string() }).optional(),
+    }),
+    response: z.object({ id: z.number(), name: z.string(), bodyKeys: z.array(z.string()) }),
+    status: 201,
+};
+
+const ZodGet = {
+    params: z.object({ id: z.coerce.number().int().min(1) }),
+    query: z.object({ page: z.coerce.number().int().optional() }),
+};
+
+const ZodAsync = { body: z.object({ code: z.string().refine(async (code) => code === "ok", "must be ok") }) };
+
+const withSecret = <T extends object>(value: T) => ({ ...value, passwordHash: "$argon2id$secret" });
+
+@Controller("/zod")
+class ZodController {
+    @Post("/users", ZodCreate)
+    create(ctx: Ctx<typeof ZodCreate>) {
+        const age: number = ctx.body.age;
+        return withSecret({ id: age + 1, name: ctx.body.name, bodyKeys: Object.keys(ctx.body) });
+    }
+
+    @Get("/users/:id", ZodGet)
+    get(ctx: Ctx<typeof ZodGet>) {
+        const id: number = ctx.params.id;
+        return { id, page: ctx.query.page ?? null, idType: typeof id };
+    }
+
+    @Post("/async", ZodAsync)
+    async check(ctx: Ctx<typeof ZodAsync>) {
+        return { code: ctx.body.code };
+    }
+
+    @Get("/mismatch", { response: z.object({ id: z.number() }) })
+    mismatch() {
+        return { id: "seven" } as unknown as { id: number };
+    }
+}
+
+export const controllers = [
+    RootController,
+    UserController,
+    FileController,
+    AdminController,
+    TypedController,
+    SchemaController,
+    ZodController,
+];
 
 export function fixtureOptions(): Omit<AppOptions, "engine"> {
     return {

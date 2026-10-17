@@ -53,9 +53,9 @@ Coût : 2 cibles × 3 scénarios × 5 rounds × ~9 s ≈ 5 min de verrou par mot
 
 Autres outils (tous sous le verrou machine) :
 
-- `bun run.ts --targets sparkus-pipeline-bun,sparkus-pipeline-node --scenarios pipe-none,pipe-guard,...` : coût des guards et intercepteurs sur les vrais moteurs. `error-404` et `error-400` (floods de requêtes en erreur) marchent sur toutes les cibles. Ces cibles et scénarios ne tournent que si on les nomme.
+- `bun run.ts --targets sparkus-pipeline-bun,sparkus-pipeline-node --scenarios pipe-none,pipe-guard,...` : coût des guards et intercepteurs sur les vrais moteurs. `error-404` et `error-400` (floods de requêtes en erreur) marchent sur toutes les cibles. `list` (`GET /users`, 10 enregistrements réduits à 4 de leurs 6 champs par le schéma `response`) ne vise que les cibles Sparkus. Ces cibles et scénarios ne tournent que si on les nomme.
 - `bun startup.ts [--runs 10] [--routes 100,1000]` : démarrage à froid (spawn → première réponse 200) et RSS, petites apps et apps générées de N routes (`targets/large/`).
-- `bun with-lock.ts -- bun micro/pipeline.js [coreDist]`, `... micro/validator.js` (ou `node` à la place de `bun`) : micro-benchs en process du pipeline compilé et de la validation (contre TypeBox et ajv). Ils refusent de tourner sans le verrou.
+- `bun with-lock.ts -- bun micro/pipeline.js [coreDist]`, `... micro/validator.js`, `... micro/serializer.js` (ou `node` à la place de `bun`) : micro-benchs en process du pipeline compilé, de la validation (contre TypeBox et ajv) et de la sérialisation des réponses (JSON natif, sérialiseur compilé, projection ; sous Bun, avec la construction de la `Response`). Ils refusent de tourner sans le verrou.
 
 ## Méthode
 
@@ -109,7 +109,7 @@ Chaque framework est écrit **de façon idiomatique**, avec sa configuration rec
 | Cible | Validation | Particularités |
 |---|---|---|
 | `bun-raw`, `node-raw` | à la main | plafonds, sans framework |
-| Sparkus | schéma compilé (`t.*`) | décorateurs TC39, `inject()`, paquet `sparkus` (v1) |
+| Sparkus | schéma compilé (`t.*`) | décorateurs TC39, `inject()`, paquet `sparkus` (v1) ; schémas `response` (champs non déclarés retirés, D12), comme Fastify |
 | `spike-bun`, `spike-node` | schéma compilé (`t.*`) | prototype de la phase 0, référence anti-régression (temporaire) |
 | Elysia | TypeBox (`t.*`) | répond 422 sur body invalide |
 | Hono | Zod (`@hono/zod-validator`) | |

@@ -255,6 +255,126 @@ for (const [label, start] of targets) {
             });
         });
 
+        describe("undeclared fields", () => {
+            const post = (body: string) => target.request("/schema/body", { method: "POST", headers: JSON_BODY, body });
+
+            test("unknown body fields are dropped, at every depth", async () => {
+                const res = await post(
+                    JSON.stringify({
+                        name: "Ada",
+                        role: "admin",
+                        address: { city: "London", isAdmin: true },
+                        links: [{ url: "https://a.example", trusted: true }],
+                        tags: ["x"],
+                    }),
+                );
+                expectJson(res, 200, {
+                    keys: ["name", "address", "links", "tags"],
+                    body: { name: "Ada", address: { city: "London" }, links: [{ url: "https://a.example" }], tags: ["x"] },
+                    prototype: true,
+                });
+            });
+
+            test("absent optional fields stay absent", async () => {
+                expectJson(await post(JSON.stringify({ tags: ["x"], name: "Ada" })), 200, {
+                    keys: ["name", "tags"],
+                    body: { name: "Ada", tags: ["x"] },
+                    prototype: true,
+                });
+            });
+
+            test("a __proto__ key in the body is dropped like any unknown field", async () => {
+                expectJson(await post('{"name":"Ada","__proto__":{"isAdmin":true}}'), 200, {
+                    keys: ["name"],
+                    body: { name: "Ada" },
+                    prototype: true,
+                });
+            });
+
+            test("t.nullable: null goes through body and response, objects are still filtered", async () => {
+                const send = (body: unknown) =>
+                    target.request("/schema/nullable", { method: "POST", headers: JSON_BODY, body: JSON.stringify(body) });
+                expectJson(await send({ nick: null, manager: null }), 200, { nick: null, manager: null });
+                expectJson(await send({ nick: "Ada", manager: { name: "Grace", salary: 1 } }), 200, {
+                    nick: "Ada",
+                    manager: { name: "Grace" },
+                });
+                expectProblem(await send({ nick: null }), 400, { issues: [{ path: "$.manager", message: "is required" }] });
+                expectProblem(await send({ nick: 1, manager: null }), 400, {
+                    issues: [{ path: "$.nick", message: "must be a string or null" }],
+                });
+            });
+
+            const PUBLIC = { id: 1, name: "Ada", address: { city: "London" }, roles: [{ name: "admin" }, { name: "author" }] };
+
+            test("the response keeps only the fields of its schema", async () => {
+                const res = await target.request("/schema/entity");
+                expectJson(res, 200, PUBLIC);
+                expect(res.text).not.toContain("argon2id");
+                expect(res.text).not.toContain("private road");
+            });
+
+            test("async handlers are projected the same way", async () => {
+                expectJson(await target.request("/schema/entity-async"), 200, PUBLIC);
+            });
+
+            test("interceptors receive the projected value", async () => {
+                expectJson(await target.request("/schema/entity-wrapped"), 200, { data: PUBLIC });
+            });
+
+            test("a Response is sent as it is", async () => {
+                expectJson(await target.request("/schema/entity-raw"), 200, { raw: true });
+            });
+
+            test("Standard Schema (Zod) body: validated, unknown fields dropped, response filtered", async () => {
+                const res = await target.request("/zod/users", {
+                    method: "POST",
+                    headers: JSON_BODY,
+                    body: JSON.stringify({ name: "Ada", age: 36, role: "admin", address: { city: "London", zip: "x" } }),
+                });
+                expectJson(res, 201, { id: 37, name: "Ada", bodyKeys: ["name", "age", "address"] });
+                expect(res.text).not.toContain("argon2id");
+            });
+
+            test("Standard Schema (Zod) invalid body is 400 SPK2004 with the library's message", async () => {
+                const res = await target.request("/zod/users", {
+                    method: "POST",
+                    headers: JSON_BODY,
+                    body: JSON.stringify({ name: "Ada", age: 3.5 }),
+                });
+                const problem = expectProblem(res, 400, { code: "SPK2004" });
+                expect(problem.issues).toHaveLength(1);
+                expect(problem.issues[0].path).toBe("$.age");
+                expect(problem.detail).toStartWith("Request body is invalid: $.age ");
+            });
+
+            test("Standard Schema (Zod) params and query are converted", async () => {
+                expectJson(await target.request("/zod/users/42?page=3"), 200, { id: 42, page: 3, idType: "number" });
+                const problem = expectProblem(await target.request("/zod/users/abc"), 400, { code: "SPK2004" });
+                expect(problem.issues[0].path).toBe("params.id");
+                expect(problem.detail).toStartWith('Invalid path parameter "id": ');
+            });
+
+            test("Standard Schema with an async check", async () => {
+                const post = (code: string) =>
+                    target.request("/zod/async", { method: "POST", headers: JSON_BODY, body: JSON.stringify({ code }) });
+                expectJson(await post("ok"), 200, { code: "ok" });
+                expectProblem(await post("no"), 400, { code: "SPK2004", issues: [{ path: "$.code", message: "must be ok" }] });
+            });
+
+            test("Standard Schema response mismatch is 500 SPK5001", async () => {
+                const problem = expectProblem(await target.request("/zod/mismatch"), 500, { code: "SPK5001" });
+                expect(problem.detail).toContain("GET /zod/mismatch (ZodController.mismatch)");
+                expect(problem.detail).toContain("$.id ");
+            });
+
+            test("a value that does not match the response schema is a 500 naming the route and the path", async () => {
+                const problem = expectProblem(await target.request("/schema/mismatch"), 500, { code: "SPK5001" });
+                expect(problem.detail).toContain("GET /schema/mismatch (SchemaController.mismatch)");
+                expect(problem.detail).toContain("$.roles must be an array, got string");
+            });
+        });
+
         describe("errors", () => {
             test("unexpected error is 500 without stack", async () => {
                 const problem = expectProblem(await target.request("/boom"), 500, { code: "SPK5000" });

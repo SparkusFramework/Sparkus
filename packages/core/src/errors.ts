@@ -31,6 +31,7 @@ export const ErrorCode = {
     Forbidden: "SPK2007",
 
     Internal: "SPK5000",
+    ResponseMismatch: "SPK5001",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -198,12 +199,13 @@ export function renderHttpError(error: HttpError): RenderedError {
     };
 }
 
-export function renderInternalError(detail: string | undefined): RenderedError {
+/** `code` is the SparkusError's own code (SPK5001...), SPK5000 for any other error. */
+export function renderInternalError(detail: string | undefined, code: ErrorCode = ErrorCode.Internal): RenderedError {
     const problem: ProblemDetails = {
         type: "about:blank",
         title: "Internal Server Error",
         status: 500,
-        code: ErrorCode.Internal,
+        code,
     };
     if (detail !== undefined) problem.detail = detail;
     return { status: 500, body: JSON.stringify(problem), headers: PROBLEM_HEADERS };

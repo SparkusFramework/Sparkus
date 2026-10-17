@@ -1,5 +1,6 @@
 import type { CompiledRoute } from "./compile.js";
-import type { Schema } from "./schema.js";
+import type { AnySchema, Schema } from "./schema.js";
+import { isStandardSchema, standardJsonSchema } from "./standard.js";
 
 export interface OpenApiOptions {
     title?: string;
@@ -12,6 +13,12 @@ type JsonSchema = Record<string, unknown>;
 
 /** Converts a `t` schema to JSON Schema (draft 2020-12, as used by OpenAPI 3.1). */
 export function toJsonSchema(schema: Schema): JsonSchema {
+    const json = typeJsonSchema(schema);
+    // 2020-12 spells nullable as a type list: { "type": ["string", "null"] }.
+    return schema.nullable === true ? { ...json, type: [json.type, "null"] } : json;
+}
+
+function typeJsonSchema(schema: Schema): JsonSchema {
     const { min, max } = schema.bounds;
     switch (schema.kind) {
         case "string":
@@ -40,6 +47,14 @@ export function toJsonSchema(schema: Schema): JsonSchema {
     }
 }
 
+/**
+ * JSON Schema of a route schema: always for `t` schemas, for a Standard Schema when its
+ * library implements Standard JSON Schema (Zod 4 does). Undefined otherwise.
+ */
+function jsonSchemaOf(schema: AnySchema, io: "input" | "output"): JsonSchema | undefined {
+    return isStandardSchema(schema) ? standardJsonSchema(schema, io) : toJsonSchema(schema);
+}
+
 const PROBLEM = {
     description: "Error (RFC 9457 problem details). `code` identifies it: SPKxxxx for Sparkus errors, or your own.",
     content: { "application/problem+json": { schema: { $ref: "#/components/schemas/Problem" } } },
@@ -58,13 +73,14 @@ export function generateOpenApi(routes: readonly CompiledRoute[], options: OpenA
         const path = route.path.replace(/:([A-Za-z_$][\w$]*)/g, "{$1}");
         const parameters: unknown[] = [];
 
-        const paramFields = route.params?.shape;
+        const paramFields = (route.params && jsonSchemaOf(route.params, "input"))?.properties as Record<string, JsonSchema> | undefined;
         for (const name of route.paramNames) {
-            const field = paramFields?.[name];
-            parameters.push({ name, in: "path", required: true, schema: field ? toJsonSchema(field) : { type: "string" } });
+            parameters.push({ name, in: "path", required: true, schema: paramFields?.[name] ?? { type: "string" } });
         }
-        for (const [name, field] of Object.entries(route.query?.shape ?? {})) {
-            parameters.push({ name, in: "query", required: !field.optional, schema: toJsonSchema(field) });
+        const query = route.query && jsonSchemaOf(route.query, "input");
+        const requiredQuery = new Set((query?.required as string[] | undefined) ?? []);
+        for (const [name, field] of Object.entries((query?.properties as Record<string, JsonSchema> | undefined) ?? {})) {
+            parameters.push({ name, in: "query", required: requiredQuery.has(name), schema: field });
         }
 
         const success = String(route.status);
@@ -72,13 +88,13 @@ export function generateOpenApi(routes: readonly CompiledRoute[], options: OpenA
             operationId: route.handlerName,
             ...(parameters.length > 0 && { parameters }),
             ...(route.body !== undefined && {
-                requestBody: { required: true, content: { "application/json": { schema: toJsonSchema(route.body) } } },
+                requestBody: { required: true, content: { "application/json": { schema: jsonSchemaOf(route.body, "input") ?? {} } } },
             }),
             responses: {
                 [success]: {
                     description: successText(route.status),
                     ...(route.response !== undefined && {
-                        content: { "application/json": { schema: toJsonSchema(route.response) } },
+                        content: { "application/json": { schema: jsonSchemaOf(route.response, "output") ?? {} } },
                     }),
                 },
                 default: PROBLEM,

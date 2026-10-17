@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { CliError, describeError, loadApp, unlistedControllers } from "./app-loader.js";
 import { ArgsError, parseArgs, suggest, type FlagSpecs } from "./args.js";
+import { generateClient } from "./client.js";
 import { dev } from "./dev.js";
 import { initProject } from "./init.js";
 
@@ -11,6 +14,7 @@ const GLOBAL_FLAGS: FlagSpecs = {
     version: { type: "boolean", short: "v", description: "Print the version." },
     json: { type: "boolean", description: "Machine-readable output (JSON on stdout)." },
     watch: { type: "string", description: "Folder watched by dev (default: src)." },
+    out: { type: "string", description: "File written by client (default: stdout)." },
 };
 
 interface Command {
@@ -106,6 +110,25 @@ const COMMANDS: Record<string, Command> = {
             const { app } = await loadApp(positionals[0], process.cwd());
             await app.init();
             print(true, app.openapi(), "");
+            return 0;
+        },
+    },
+    client: {
+        usage: "client [entry] [--out file]",
+        summary: "Generate a typed TypeScript client (one file, no dependency) from the route schemas.",
+        run: async ({ json, positionals, flags }) => {
+            const { app, entry } = await loadApp(positionals[0], process.cwd());
+            await app.init();
+            const { code, routes } = generateClient(app.openapi());
+            const out = typeof flags.out === "string" ? flags.out : undefined;
+            if (out === undefined) {
+                process.stdout.write(code);
+                return 0;
+            }
+            const file = resolve(process.cwd(), out);
+            mkdirSync(dirname(file), { recursive: true });
+            writeFileSync(file, code);
+            print(json, { ok: true, entry, file: out, routes }, `✓ ${out}: client for ${routes} routes.`);
             return 0;
         },
     },

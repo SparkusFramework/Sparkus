@@ -32,7 +32,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 | SPK1014 | Invalid route path: empty segment, bad parameter name, repeated parameter, or unsupported syntax (`*`, `?`, `(`). | Use static segments and `:name` parameters (letters, digits, `_`, `$`). |
 | SPK1015 | `listen()` called twice on the same app. | Create one app per server. |
 | SPK1016 | An `onInit()` or `onShutdown()` hook failed. | See `cause`. A failing `onInit()` stops startup; failing `onShutdown()` hooks are reported together after all of them ran. |
-| SPK1017 | A route's `params` or `query` schema is invalid: not a `t.object()`, a field that is not a string, integer, number or boolean, or `params` that do not match the path's parameters exactly (missing, extra, or optional). The message lists the schema's fields and the path's parameters side by side. | Declare exactly the path's parameters in `params`, all required; use flat scalar fields. |
+| SPK1017 | A route's schema is invalid. `params` or `query`: not a `t.object()`, a field that is not a string, integer, number or boolean, or `params` that do not match the path's parameters exactly (missing, extra, or optional), or a `t.nullable()` field (parameters are strings, never null); the message lists the schema's fields and the path's parameters side by side. `body` or `response`: a field named `__proto__`. Any of them: an object with a `~standard` property that is not a Standard Schema v1 (no `validate()`). | Declare exactly the path's parameters in `params`, all required; use flat scalar fields. Rename a `__proto__` field. Use a `t` schema or a library implementing Standard Schema v1. |
 
 ## Request
 
@@ -41,7 +41,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 | SPK2001 | 404 | No route matches the method and path. Paths are case-sensitive and a trailing slash is a different path. In development and test, the detail suggests the closest route: `Did you mean GET /users/:id?` |
 | SPK2002 | 405 | The path exists, but not for this method. The `Allow` header lists the accepted methods. |
 | SPK2003 | 400 | The body is empty or not valid JSON. |
-| SPK2004 | 400 | The body does not match the route's schema. `issues` gives the path of the first invalid value (`$.age`) and what was expected. |
+| SPK2004 | 400 | The body does not match the route's schema. `issues` gives the path of the first invalid value (`$.age`) and what was expected. Fields the schema does not list are not an error: they are dropped. |
 | SPK2005 | 415 | The route expects JSON but the request's `content-type` is something else, or missing. |
 | SPK2006 | 413 | The body is larger than `bodyLimit` (1 MiB by default). |
 | SPK2007 | 403 | A guard returned something other than `true`. Guards can also throw their own `HttpError` (for example a 401 with your own code). |
@@ -51,6 +51,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 | Code | Status | Meaning |
 |---|---|---|
 | SPK5000 | 500 | Your code threw something that is not an `HttpError`. The error is logged with the method and path. Its message is sent only when `exposeErrors` is on (by default in `development` and `test`); the stack is never sent. Map known errors to HTTP errors with `onError`. |
+| SPK5001 | 500 | The handler's value does not have the shape of the route's `response` schema: an object or array is missing, or is something else (`$.roles must be an array, got string`). Usually a cast (`as any`) hid it from the compiler. Logged like SPK5000; the message names the route and the path. |
 
 ## Your own errors
 

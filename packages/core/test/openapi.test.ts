@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { toJsonSchema } from "../src/openapi.js";
 import { Controller, Get, Post, createApp, t, type Ctx } from "../src/index.js";
 
 const GetUser = {
@@ -76,5 +77,16 @@ test("a response schema documents the success body", async () => {
         type: "object",
         properties: { id: { type: "integer" } },
         required: ["id"],
+    });
+});
+
+test("nullable schemas are type lists (JSON Schema 2020-12)", () => {
+    expect(toJsonSchema(t.nullable(t.string({ min: 1 })))).toEqual({ type: ["string", "null"], minLength: 1 });
+    expect(toJsonSchema(t.object({ manager: t.nullable(t.object({ name: t.string() })) }))).toEqual({
+        type: "object",
+        properties: {
+            manager: { type: ["object", "null"], properties: { name: { type: "string" } }, required: ["name"] },
+        },
+        required: ["manager"],
     });
 });

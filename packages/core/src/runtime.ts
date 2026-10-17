@@ -2,6 +2,7 @@ import type { CompiledRoute } from "./compile.js";
 import type { Ctx } from "./context.js";
 import {
     HttpError,
+    SparkusError,
     renderHttpError,
     renderInternalError,
     renderMethodNotAllowed,
@@ -72,7 +73,7 @@ export class AppRuntime {
                 ? current.message
                 : String(current)
             : undefined;
-        return renderInternalError(detail);
+        return renderInternalError(detail, current instanceof SparkusError ? current.code : undefined);
     }
 
     notFound(method: string, path: string): RenderedError {

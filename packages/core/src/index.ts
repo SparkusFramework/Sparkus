@@ -43,4 +43,5 @@ export type {
 } from "./pipeline.js";
 export type { OpenApiOptions } from "./openapi.js";
 export type { ErrorMapper, Logger } from "./runtime.js";
-export { t, type Infer, type Issue, type Schema } from "./schema.js";
+export { t, type AnySchema, type Infer, type Issue, type Schema } from "./schema.js";
+export type { StandardSchemaV1 } from "./standard.js";
