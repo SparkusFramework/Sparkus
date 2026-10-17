@@ -11,30 +11,30 @@
 import { Controller, Get, Post, HttpError, createApp, inject, t, type Ctx } from "sparkus";
 
 class UserService {
-    find(id: string) {
-        return id === "42" ? { id, name: "Ada" } : undefined;
+    find(id: number) {
+        return id === 42 ? { id, name: "Ada" } : undefined;
     }
 }
 
-const CreateUser = {
-    body: t.object({ name: t.string({ min: 1 }), age: t.integer({ min: 0 }) }),
-    status: 201,
-};
+const User = t.object({ id: t.integer(), name: t.string() });
+const GetUser = { params: t.object({ id: t.integer({ min: 1 }) }), response: User };
+const CreateUser = { body: t.object({ name: t.string({ min: 1 }) }), status: 201 };
 
 @Controller("/users")
 class UserController {
     private readonly users = inject(UserService);
 
-    @Get("/:id")
-    get(ctx: Ctx) {
-        const user = this.users.find(ctx.params.id!);
-        if (user === undefined) throw HttpError.notFound(`User ${ctx.params.id} not found.`);
+    @Get("/:id", GetUser)
+    get(ctx: Ctx<typeof GetUser>) {
+        // ctx.params.id is a number, converted and validated; the return type is checked against User.
+        const user = this.users.find(ctx.params.id);
+        if (user === undefined) throw HttpError.notFound(`User ${ctx.params.id} not found.`, { code: "USER_NOT_FOUND" });
         return user;
     }
 
     @Post("", CreateUser)
     create(ctx: Ctx<typeof CreateUser>) {
-        return { id: 1, ...ctx.body }; // ctx.body is typed { name: string; age: number }, already validated
+        return { id: 1, ...ctx.body }; // ctx.body is { name: string }, already validated
     }
 }
 
@@ -46,7 +46,9 @@ await createApp({ controllers: [UserController] }).listen({ port: 3000 });
 - **Fast by construction.** Everything that can be decided at startup is: dependencies are resolved once, validators are compiled to plain functions, and each route's pipeline (guards, interceptors, validation) is composed ahead of time. A route without guards runs its handler directly. On Bun, routes go to `Bun.serve`'s native router.
 - **One app, two runtimes.** `createApp` picks `Bun.serve` under Bun and `node:http` under Node. One conformance suite runs on both: the engine never changes your app's behavior.
 - **Standard TypeScript.** TC39 decorators, no `experimentalDecorators`, no `reflect-metadata`. Dependencies come from `inject(Service)`: typed, no string tokens.
-- **Errors anyone can act on.** HTTP errors are `application/problem+json` (RFC 9457) with stable codes. Startup errors (`SPK1xxx`) say what is wrong and how to fix it: dependency cycles show their full path, duplicate routes name both handlers.
+- **One schema, everything typed.** `params`, `query`, `body` and `response` schemas type the handler, convert and validate inputs (`/users/abc` is a 400 naming `params.id`), and produce the OpenAPI 3.1 document (`app.openapi()`).
+- **Errors anyone can act on.** HTTP errors are `application/problem+json` (RFC 9457) with stable codes. Startup errors (`SPK1xxx`) say what is wrong and how to fix it: dependency cycles show their full path, duplicate routes name both handlers, a 404 in development suggests the route you meant. Reference: [docs/errors.md](./docs/errors.md).
+- **Built for agents.** `sparkus init` scaffolds `AGENTS.md`, `CLAUDE.md`, skills and a check hook; `sparkus check --json` validates the wiring without starting the server; [llms.txt](./llms.txt) is the whole API on one page.
 - **Production basics built in.** Lifecycle hooks (`onInit`, `onShutdown`), graceful shutdown on SIGTERM with connection draining, body limits, no stack traces in responses.
 - **Zero runtime dependencies**, checked in CI.
 
