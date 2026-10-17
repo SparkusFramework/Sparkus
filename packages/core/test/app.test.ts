@@ -6,10 +6,10 @@ import {
     UseGuards,
     createApp,
     inject,
-    isJsonContentType,
     t,
     type Ctx,
 } from "../src/index.js";
+import { isJsonContentType } from "../src/engine.js";
 
 describe("startup checks", () => {
     test("dependency cycle through a controller", async () => {

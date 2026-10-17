@@ -12,7 +12,7 @@ Instructions for anyone, human or agent, changing this repository. Read [ROADMAP
 
 | Path | Contents |
 |---|---|
-| `packages/core` | Decorators, DI (`di.ts`), route compilation (`compile.ts`), pipeline (`pipeline.ts`), router (`router.ts`), errors, web context (`web.ts`), app (`app.ts`). |
+| `packages/core` | Decorators, DI (`di.ts`), route compilation (`compile.ts`), pipeline (`pipeline.ts`), router (`router.ts`), errors, web context (`web.ts`), app (`app.ts`). Two entry points: `index.ts` (public API for applications, nothing else) and `engine.ts` (SPI for engines: runtime, contexts, router, error rendering). |
 | `packages/engine-bun` | `Bun.serve` native routes; misses fall back to the core router. |
 | `packages/engine-node` | `node:http` + core router. |
 | `packages/sparkus` | Public package: re-exports core, picks the engine. |

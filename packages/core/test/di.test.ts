@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Container, inject, token, type OnInit, type OnShutdown } from "../src/index.js";
+import { Container } from "../src/engine.js";
+import { inject, token, type OnInit, type OnShutdown } from "../src/index.js";
 
 describe("Container", () => {
     test("singletons", () => {

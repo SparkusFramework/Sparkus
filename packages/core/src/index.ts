@@ -1,22 +1,8 @@
-export {
-    createApp,
-    SparkusApp,
-    type AppOptions,
-    type Engine,
-    type EngineServer,
-    type ListenOptions,
-    type ListeningInfo,
-    type RouteInfo,
-} from "./app.js";
-export type { CompiledRoute } from "./compile.js";
-export {
-    NO_PARAMS,
-    type Ctx,
-    type HandlerResult,
-    type HttpMethod,
-    type RequestContext,
-    type RouteOptions,
-} from "./context.js";
+// Public API: everything needed to write an application, nothing more.
+// Engine authors import "@sparkus/core/engine".
+
+export { createApp, SparkusApp, type AppOptions, type ListenOptions, type ListeningInfo, type RouteInfo } from "./app.js";
+export type { Ctx, HandlerResult, HttpMethod, RouteOptions } from "./context.js";
 export {
     Controller,
     Delete,
@@ -30,7 +16,6 @@ export {
     UseInterceptors,
 } from "./decorators.js";
 export {
-    Container,
     inject,
     token,
     type Class,
@@ -43,16 +28,9 @@ export {
 export {
     ErrorCode,
     HttpError,
-    PROBLEM_TYPE,
     SparkusError,
-    isJsonContentType,
-    malformedJson,
-    payloadTooLarge,
-    statusTitle,
-    unsupportedMediaType,
     type HttpErrorOptions,
     type ProblemDetails,
-    type RenderedError,
 } from "./errors.js";
 export type {
     Guard,
@@ -63,9 +41,6 @@ export type {
     InterceptorLike,
     Next,
 } from "./pipeline.js";
-export { generateOpenApi, toJsonSchema, type OpenApiOptions } from "./openapi.js";
-export { parseQuery } from "./query.js";
-export { Router, decodeParam, type Match } from "./router.js";
-export { AppRuntime, type ErrorMapper, type Logger } from "./runtime.js";
-export { compileValidator, t, type Infer, type Issue, type Schema, type Validator } from "./schema.js";
-export { WebContext, createFetchHandler, createWebHandler, errorResponse, toResponse, type WebHandler } from "./web.js";
+export type { OpenApiOptions } from "./openapi.js";
+export type { ErrorMapper, Logger } from "./runtime.js";
+export { t, type Infer, type Issue, type Schema } from "./schema.js";

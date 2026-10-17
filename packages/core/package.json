@@ -10,6 +10,11 @@
             "bun": "./src/index.ts",
             "types": "./src/index.ts",
             "default": "./dist/index.js"
+        },
+        "./engine": {
+            "bun": "./src/engine.ts",
+            "types": "./src/engine.ts",
+            "default": "./dist/engine.js"
         }
     },
     "files": ["dist", "src"],

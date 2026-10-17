@@ -13,7 +13,7 @@ import {
     type EngineServer,
     type RenderedError,
     type RequestContext,
-} from "@sparkus/core";
+} from "@sparkus/core/engine";
 
 type Params = Readonly<Record<string, string>>;
 type NodeHandler = (req: IncomingMessage, res: ServerResponse, params: Params, path: string, rawQuery: string) => void;

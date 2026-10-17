@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Router } from "../src/index.js";
+import { Router } from "../src/engine.js";
 
 function router(routes: Array<[string, string]>) {
     const r = new Router<string>();

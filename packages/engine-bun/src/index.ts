@@ -8,7 +8,7 @@ import {
     type AppRuntime,
     type Engine,
     type EngineServer,
-} from "@sparkus/core";
+} from "@sparkus/core/engine";
 
 type BunRequest = Request & { params: Record<string, string> };
 type BunRouteHandler = (request: BunRequest) => Response | Promise<Response>;

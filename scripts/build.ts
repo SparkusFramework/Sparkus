@@ -18,7 +18,7 @@ interface Target {
 }
 
 const targets: Target[] = [
-    { dir: "packages/core", entries: ["index.ts"] },
+    { dir: "packages/core", entries: ["index.ts", "engine.ts"] },
     { dir: "packages/engine-bun", entries: ["index.ts"] },
     { dir: "packages/engine-node", entries: ["index.ts"] },
     { dir: "packages/sparkus", entries: ["index.ts"] },

@@ -3,9 +3,9 @@ import {
     ErrorCode,
     SparkusError,
     type AppOptions as CoreAppOptions,
-    type Engine,
     type SparkusApp,
 } from "@sparkus/core";
+import type { Engine } from "@sparkus/core/engine";
 
 /** "auto" picks Bun.serve under Bun and node:http under Node. */
 export type EngineChoice = "auto" | "bun" | "node" | Engine;
