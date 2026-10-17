@@ -154,6 +154,37 @@ for (const [label, start] of targets) {
             });
         });
 
+        describe("typed params and query", () => {
+            test("values are converted before guards and the handler", async () => {
+                expectJson(await target.request("/typed/42?page=2&draft=true&other=x"), 200, {
+                    id: 42,
+                    page: 2,
+                    draft: true,
+                    pageType: "number",
+                });
+                expectJson(await target.request("/typed/7"), 200, { id: 7, page: null, draft: null, pageType: "undefined" });
+            });
+
+            test("an invalid path parameter is 400 naming it", async () => {
+                const res = await target.request("/typed/abc");
+                expectProblem(res, 400, {
+                    code: "SPK2004",
+                    detail: "Invalid path parameter params.id: must be an integer.",
+                    issues: [{ path: "params.id", message: "must be an integer" }],
+                });
+                expectProblem(await target.request("/typed/0"), 400, { issues: [{ path: "params.id", message: "must be >= 1" }] });
+            });
+
+            test("an invalid query parameter is 400 naming it", async () => {
+                expectProblem(await target.request("/typed/5?page=two"), 400, {
+                    detail: "Invalid query parameter query.page: must be an integer.",
+                });
+                expectProblem(await target.request("/typed/5?draft=maybe"), 400, {
+                    issues: [{ path: "query.draft", message: 'must be "true", "false", "1" or "0"' }],
+                });
+            });
+        });
+
         describe("body", () => {
             test("valid body", async () => {
                 const res = await target.request("/users", {

@@ -277,7 +277,25 @@ class AdminController {
     }
 }
 
-export const controllers = [RootController, UserController, FileController, AdminController];
+const TypedPost = {
+    params: t.object({ id: t.integer({ min: 1 }) }),
+    query: t.object({ page: t.optional(t.integer({ min: 1 })), draft: t.optional(t.boolean()) }),
+};
+
+// Guards run after params and query are converted.
+const paramsAreTyped = (ctx: Ctx) => typeof (ctx.params as Record<string, unknown>).id === "number";
+
+@Controller("/typed")
+class TypedController {
+    @Get("/:id", TypedPost)
+    @UseGuards(paramsAreTyped)
+    get(ctx: Ctx<typeof TypedPost>) {
+        const id: number = ctx.params.id;
+        return { id, page: ctx.query.page ?? null, draft: ctx.query.draft ?? null, pageType: typeof ctx.query.page };
+    }
+}
+
+export const controllers = [RootController, UserController, FileController, AdminController, TypedController];
 
 export function fixtureOptions(): Omit<AppOptions, "engine"> {
     return {

@@ -19,6 +19,7 @@ import {
     type InterceptorLike,
     type Run,
 } from "./pipeline.js";
+import { checkSchema, compileCoercer } from "./coerce.js";
 import { compileValidator, type Schema } from "./schema.js";
 
 /**
@@ -131,6 +132,10 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                 ...own<InterceptorLike>(method, INTERCEPTORS).map((i) => resolveInterceptor(i, container, handlerName)),
             ];
             const body = route.options.body;
+            const where = `${id} (${handlerName})`;
+            const { params, query } = route.options;
+            if (params !== undefined) checkSchema(params, "params", where, paramNames);
+            if (query !== undefined) checkSchema(query, "query", where, paramNames);
 
             routes.push({
                 method: route.method,
@@ -148,6 +153,8 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                     readBody: body !== undefined,
                     validate: body === undefined ? null : compileValidator(body),
                     bodyLimit: options.bodyLimit,
+                    coerceParams: params === undefined ? null : compileCoercer(params, "params"),
+                    coerceQuery: query === undefined ? null : compileCoercer(query, "query"),
                 }),
             });
         }

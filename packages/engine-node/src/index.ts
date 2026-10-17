@@ -25,13 +25,13 @@ const BINARY_TYPE = "application/octet-stream";
 class NodeContext implements RequestContext {
     body: any = undefined;
     responseHeaders: Record<string, string> | null = null;
-    private parsedQuery: Record<string, string | undefined> | undefined = undefined;
+    private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
 
     constructor(
         readonly req: IncomingMessage,
         readonly path: string,
-        readonly params: Params,
+        public params: Readonly<Record<string, any>>,
         private readonly rawQuery: string,
         public status: number,
     ) {}
@@ -40,7 +40,11 @@ class NodeContext implements RequestContext {
         return this.req.method!;
     }
 
-    get query(): Record<string, string | undefined> {
+    set query(value: Record<string, any>) {
+        this.parsedQuery = value;
+    }
+
+    get query(): Record<string, any> {
         return (this.parsedQuery ??= parseQuery(this.rawQuery));
     }
 

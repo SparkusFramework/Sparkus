@@ -44,6 +44,10 @@ export interface Ctx<O extends RouteOptions = RouteOptions> {
 /** What an engine's context provides on top of `Ctx`. Engines implement it; applications never see it. */
 export interface RequestContext extends Ctx<any> {
     body: any;
+    /** Replaced by the typed values when the route declares a params schema. */
+    params: any;
+    /** Replaced by the typed values when the route declares a query schema. */
+    query: any;
     /** Response headers set with `setHeader()`, or null when none. */
     readonly responseHeaders: Record<string, string> | null;
     /**

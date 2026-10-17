@@ -19,12 +19,12 @@ function pathOf(url: string): string {
 export class WebContext implements RequestContext {
     body: any = undefined;
     responseHeaders: Record<string, string> | null = null;
-    private parsedQuery: Record<string, string | undefined> | undefined = undefined;
+    private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
 
     constructor(
         readonly request: Request,
-        readonly params: Readonly<Record<string, string>>,
+        public params: Readonly<Record<string, any>>,
         public status: number,
     ) {}
 
@@ -36,7 +36,11 @@ export class WebContext implements RequestContext {
         return pathOf(this.request.url);
     }
 
-    get query(): Record<string, string | undefined> {
+    set query(value: Record<string, any>) {
+        this.parsedQuery = value;
+    }
+
+    get query(): Record<string, any> {
         if (this.parsedQuery === undefined) {
             const url = this.request.url;
             const index = url.indexOf("?");

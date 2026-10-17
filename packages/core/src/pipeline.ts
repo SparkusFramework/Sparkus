@@ -1,6 +1,7 @@
 import type { Ctx, RequestContext } from "./context.js";
 import type { Class, Container } from "./di.js";
 import { ErrorCode, HttpError, SparkusError, guardRejected } from "./errors.js";
+import type { Coercer } from "./coerce.js";
 import type { Issue, Validator } from "./schema.js";
 
 /** A guard lets a request through by returning `true`. Anything else answers 403. */
@@ -96,6 +97,10 @@ export interface PipelineParts {
     readBody: boolean;
     validate: Validator | null;
     bodyLimit: number;
+    /** Converts and validates path parameters (route `params` schema). */
+    coerceParams: Coercer | null;
+    /** Converts and validates query parameters (route `query` schema). */
+    coerceQuery: Coercer | null;
 }
 
 /**
@@ -139,6 +144,30 @@ export function composePipeline(parts: PipelineParts): Run {
         const guards = parts.guards;
         const next = run;
         run = guards.length === 1 ? singleGuard(guards[0]!, next) : (ctx) => runGuards(guards, 0, ctx, next);
+    }
+
+    // Typed params and query come first, so guards and interceptors see converted values.
+    const coerceParams = parts.coerceParams;
+    const coerceQuery = parts.coerceQuery;
+    if (coerceParams !== null || coerceQuery !== null) {
+        const next = run;
+        if (coerceQuery === null) {
+            run = (ctx) => {
+                ctx.params = coerceParams!(ctx.params);
+                return next(ctx);
+            };
+        } else if (coerceParams === null) {
+            run = (ctx) => {
+                ctx.query = coerceQuery(ctx.query);
+                return next(ctx);
+            };
+        } else {
+            run = (ctx) => {
+                ctx.params = coerceParams(ctx.params);
+                ctx.query = coerceQuery(ctx.query);
+                return next(ctx);
+            };
+        }
     }
 
     return run;
