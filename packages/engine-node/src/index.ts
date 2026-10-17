@@ -1,4 +1,11 @@
-import { createServer, type IncomingMessage, type ServerOptions, type ServerResponse } from "node:http";
+import {
+    createServer,
+    validateHeaderName,
+    validateHeaderValue,
+    type IncomingMessage,
+    type ServerOptions,
+    type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 import {
     NO_PARAMS,
@@ -87,7 +94,8 @@ class NodeContext implements RequestContext {
     }
 
     abort(reason: unknown): void {
-        this.more?.controller?.abort(reason);
+        // Created here too: a handler that reads ctx.signal after the timeout gets it aborted.
+        (this.extras.controller ??= new AbortController()).abort(reason);
     }
 
     header(name: string): string | undefined {
@@ -144,13 +152,34 @@ function sendError(res: ServerResponse, rendered: RenderedError, headers: Record
         res.destroy();
         return;
     }
-    res.writeHead(
-        rendered.status,
-        headers === null
-            ? { ...rendered.headers, "content-length": Buffer.byteLength(rendered.body) }
-            : { ...headers, ...rendered.headers, "content-length": Buffer.byteLength(rendered.body) },
-    );
+    const length = Buffer.byteLength(rendered.body);
+    if (headers === null) {
+        res.writeHead(rendered.status, { ...rendered.headers, "content-length": length });
+    } else {
+        try {
+            res.writeHead(rendered.status, { ...headers, ...rendered.headers, "content-length": length });
+        } catch {
+            // A header the handler set is what Node refused (a newline in a value): send the error without it.
+            res.writeHead(rendered.status, { ...validHeaders(headers), ...rendered.headers, "content-length": length });
+        }
+    }
     res.end(rendered.body);
+}
+
+/** The headers Node accepts, the others dropped. Error path only. */
+function validHeaders(headers: Record<string, string>): Record<string, string> {
+    const valid: Record<string, string> = {};
+    for (const name in headers) {
+        try {
+            const value = headers[name]!;
+            validateHeaderName(name);
+            validateHeaderValue(name, value);
+            valid[name] = value;
+        } catch {
+            // Dropped.
+        }
+    }
+    return valid;
 }
 
 function writeBody(res: ServerResponse, status: number, type: string, body: string | Uint8Array, headers: Record<string, string> | null): void {
@@ -264,7 +293,8 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
     return (req, res, params, path, rawQuery) => {
         const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
         observer.start(ctx, routePath, true);
-        res.once("close", () => observer.finish(ctx, res.statusCode, routePath));
+        // Closed before a response (client gone, forced shutdown): 499, as nginx logs it.
+        res.once("close", () => observer.finish(ctx, res.headersSent ? res.statusCode : 499, routePath));
         const span = ctx.extras.span;
         dispatch(res, ctx, runtime, activate !== undefined && span !== undefined ? () => activate(span, () => run(ctx)) : () => run(ctx));
     };

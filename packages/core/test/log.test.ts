@@ -106,3 +106,24 @@ describe("Logger", () => {
         expect(() => log.info("still fine")).not.toThrow();
     });
 });
+
+describe("Logger edge cases", () => {
+    test("module names in LOG_LEVEL keep their case; an empty one is refused", () => {
+        expect(parseLogLevel("INFO,UserService=DEBUG")).toEqual({ level: "info", modules: { UserService: "debug" } });
+        expect(() => parseLogLevel("info,=debug")).toThrow('"=debug" names no module');
+    });
+
+    test("anything that is not an object of fields is logged as err: a catch variable, a string", () => {
+        const { log, parsed } = capture();
+        try {
+            throw "plain string";
+        } catch (error) {
+            log.error("Caught", error);
+        }
+        log.warn("Array", [1, 2]);
+        expect(parsed()).toEqual([
+            expect.objectContaining({ msg: "Caught", err: "plain string" }),
+            expect.objectContaining({ msg: "Array", err: [1, 2] }),
+        ]);
+    });
+});

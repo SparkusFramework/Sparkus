@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Controller, Get, Logger, createApp, inject, type Ctx, type HealthCheck } from "../src/index.js";
+import { Controller, Get, Logger, Post, createApp, inject, t, type Ctx, type HealthCheck } from "../src/index.js";
 
 const json = (lines: string[]) => lines.map((line) => JSON.parse(line));
 
@@ -142,5 +142,68 @@ describe("health", () => {
         await app.init();
         const res = await app.fetch(new Request("http://x/ready"));
         expect(((await res.json()) as any).checks).toEqual({ Slow: "error: timed out after 20 ms" });
+    });
+});
+
+describe("review fixes", () => {
+    test("an unknown route option is refused, with a suggestion", async () => {
+        const Slow = { requestTimeout: 60_000 } as any;
+        @Controller()
+        class Typo {
+            @Get("/", Slow)
+            get() {
+                return 1;
+            }
+        }
+        const app = createApp({ controllers: [Typo], logger: false });
+        expect(app.init()).rejects.toThrow('[SPK1017] GET / (Typo.get): unknown route option "requestTimeout". Did you mean "timeout"?');
+    });
+
+    test("a bad app requestTimeout is named as such", async () => {
+        const app = createApp({ controllers: [Hello], logger: false, requestTimeout: -1 });
+        expect(app.init()).rejects.toThrow("[SPK1019] requestTimeout -1 is not a number of milliseconds.");
+    });
+
+    test("an invalid PORT variable is SPK1018, not NaN", async () => {
+        process.env.PORT = "80a";
+        try {
+            const app = createApp({ controllers: [Hello], logger: false, engine: { name: "x", listen: async () => ({ port: 1, hostname: "h", stop: async () => {} }) } });
+            expect(app.listen({ signals: false })).rejects.toThrow("[SPK1018] PORT must be an integer from 0 to 65535.");
+        } finally {
+            delete process.env.PORT;
+        }
+    });
+
+    test("a CORS origin function that throws refuses the origin and logs, the request goes on", async () => {
+        const lines: string[] = [];
+        const app = createApp({
+            controllers: [Hello],
+            logger: { level: "info", format: "json", write: (line) => void lines.push(line) },
+            cors: { origin: (origin) => new URL(origin).hostname === "a.com" },
+        });
+        await app.init();
+        const res = await app.fetch(new Request("http://x/", { headers: { origin: "null" } }));
+        expect(res.status).toBe(200);
+        expect(res.headers.get("access-control-allow-origin")).toBeNull();
+        expect(json(lines).find((line) => line.module === "sparkus")?.msg).toBe("cors.origin threw; the request goes on without it");
+    });
+
+    test("a request log silenced by its level keeps the plain request path", async () => {
+        const app = createApp({ controllers: [Hello], logger: { level: "warn", requests: true } });
+        await app.init();
+        expect((app as any).runtime.observer).toBeNull();
+    });
+
+    test("default and t.optional() together are refused in a body", async () => {
+        const Body = { body: t.object({ n: t.optional(t.integer({ default: 1 })) }) };
+        @Controller()
+        class Both {
+            @Post("/", Body)
+            create() {
+                return 1;
+            }
+        }
+        const app = createApp({ controllers: [Both], logger: false });
+        expect(app.init()).rejects.toThrow("$.n has both t.optional() and a default");
     });
 });

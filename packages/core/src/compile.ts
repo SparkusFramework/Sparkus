@@ -22,6 +22,7 @@ import {
     validationFailed,
 } from "./pipeline.js";
 import { checkSchema, compileCoercer, invalidRequest, type Source } from "./coerce.js";
+import { closest } from "./suggest.js";
 import { compileParser, compileProjector, type AnySchema } from "./schema.js";
 import {
     checkStandardSchema,
@@ -121,6 +122,21 @@ function compileResponse(schema: AnySchema, where: string): Step | null {
     return compileProjector(schema, where);
 }
 
+const ROUTE_OPTIONS = ["body", "params", "query", "response", "status", "bodyLimit", "timeout"];
+
+/** Route options are usually a separate const, which TypeScript does not check for unknown keys. */
+function checkRouteOptions(options: object, where: string): void {
+    for (const key of Object.keys(options)) {
+        if (ROUTE_OPTIONS.includes(key)) continue;
+        const hint = key === "requestTimeout" ? "timeout" : closest(key, ROUTE_OPTIONS);
+        throw new SparkusError(
+            ErrorCode.InvalidRouteSchema,
+            `${where}: unknown route option "${key}".${hint === undefined ? "" : ` Did you mean "${hint}"?`} ` +
+                `Route options are ${ROUTE_OPTIONS.join(", ")}.`,
+        );
+    }
+}
+
 function checkLimit(value: number, name: string, where: string, unit: string): void {
     if (!Number.isSafeInteger(value) || value < 0) {
         throw new SparkusError(ErrorCode.InvalidOption, `${where}: ${name} ${value} is not a number of ${unit}. Use an integer >= 0.`);
@@ -191,6 +207,7 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
             const body = route.options.body;
             const where = `${id} (${handlerName})`;
             const { params, query, response } = route.options;
+            checkRouteOptions(route.options, where);
             if (params !== undefined) checkInputSchema(params, "params", where, paramNames);
             if (query !== undefined) checkInputSchema(query, "query", where, paramNames);
             if (body !== undefined && isStandardSchema(body)) checkStandardSchema(body, where, "body");

@@ -107,3 +107,32 @@ describe("config()", () => {
         expect(container.get(AppConfig).SPARKUS_TEST_MISSING).toBe("fake");
     });
 });
+
+describe("config override() for tests", () => {
+    const AppConfig = config(
+        { SECRET: t.string({ min: 1 }), PAGE_SIZE: t.integer({ min: 1, default: 20 }), MODE: t.enum(["a", "b"], { default: "a" }) },
+        { name: "AppConfig", env: {} },
+    );
+
+    test("typed values over the environment, defaults kept, the required one given", () => {
+        const container = new Container();
+        container.provide(AppConfig.override({ SECRET: "s", PAGE_SIZE: 5 }));
+        expect(container.get(AppConfig)).toEqual({ SECRET: "s", PAGE_SIZE: 5, MODE: "a" });
+    });
+
+    test("overrides still pass the schema, and missing required variables are still reported", () => {
+        const invalid = new Container();
+        invalid.provide(AppConfig.override({ SECRET: "s", PAGE_SIZE: 0 }));
+        expect(() => invalid.get(AppConfig)).toThrow("PAGE_SIZE (override) must be >= 1");
+        const missing = new Container();
+        missing.provide(AppConfig.override({ PAGE_SIZE: 5 }));
+        expect(() => missing.get(AppConfig)).toThrow("SECRET is required");
+    });
+
+    test("a default with t.optional() is refused, numbers must be finite, enums are trimmed", () => {
+        expect(() => config({ N: t.optional(t.integer({ default: 1 })) })).toThrow("N has both t.optional() and a default");
+        const big = config({ N: t.number() }, { env: { N: "1e999" } });
+        expect(() => new Container().get(big)).toThrow("N must be a finite number");
+        expect(new Container().get(config({ M: t.enum(["live"]) }, { env: { M: " live " } })).M).toBe("live");
+    });
+});

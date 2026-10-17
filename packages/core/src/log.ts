@@ -6,8 +6,19 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 /** A level, or "silent" to log nothing. */
 export type LogThreshold = LogLevel | "silent";
 
-/** Extra fields of a log line, or an Error (logged as `err`). */
-export type LogFields = Readonly<Record<string, unknown>> | Error;
+/**
+ * Extra fields of a log line: an object of fields, or anything else (an Error, a `catch`
+ * variable) logged as `err`.
+ */
+export type LogFields = Readonly<Record<string, unknown>> | Error | unknown;
+
+function isFieldObject(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Error);
+}
+
+/** Runs `flush` soon: on the next event loop turn where there is one (Node, Bun), else after a timer. */
+const later: (flush: () => void) => void =
+    typeof setImmediate === "function" ? (flush) => void setImmediate(flush) : (flush) => void setTimeout(flush, 0);
 
 export interface LoggerOptions {
     /**
@@ -17,7 +28,8 @@ export interface LoggerOptions {
     level?: LogThreshold;
     /**
      * Levels per module, the name given to `child()`: `{ db: "debug" }` also covers "db.pool".
-     * Merged over the module levels of LOG_LEVEL.
+     * Request log lines use the module "http", Sparkus' own lines "sparkus". Merged over the
+     * module levels of LOG_LEVEL, when LOG_LEVEL applies (no `level` given).
      */
     modules?: Readonly<Record<string, LogThreshold>>;
     /**
@@ -62,18 +74,21 @@ export function parseLogLevel(text: string): { level: LogThreshold | undefined; 
     let level: LogThreshold | undefined;
     const modules: Record<string, LogThreshold> = {};
     for (const part of text.split(",")) {
-        const item = part.trim().toLowerCase();
+        const item = part.trim();
         if (item.length === 0) continue;
         const eq = item.indexOf("=");
-        const value = eq === -1 ? item : item.slice(eq + 1).trim();
-        if (!isThreshold(value)) {
+        // Levels are case-insensitive, module names are not: they match child("Name") as written.
+        const value = (eq === -1 ? item : item.slice(eq + 1).trim()).toLowerCase();
+        const module = eq === -1 ? "" : item.slice(0, eq).trim();
+        if (!isThreshold(value) || (eq !== -1 && module.length === 0)) {
+            const problem = isThreshold(value) ? `"${item}" names no module` : `"${value}" is not a level`;
             throw new SparkusError(
                 ErrorCode.InvalidConfig,
-                `LOG_LEVEL "${text}": "${value}" is not a level. Use ${LEVEL_LIST}, optionally with module levels: "info,db=debug".`,
+                `LOG_LEVEL "${text}": ${problem}. Use ${LEVEL_LIST}, optionally with module levels: "info,db=debug".`,
             );
         }
         if (eq === -1) level = value;
-        else modules[item.slice(0, eq).trim()] = value;
+        else modules[module] = value;
     }
     return { level, modules };
 }
@@ -104,7 +119,7 @@ function json(value: unknown): string | undefined {
 /** `,"key":value` for each defined field. */
 function fieldsJson(fields: LogFields | undefined): string {
     if (fields === undefined) return "";
-    if (fields instanceof Error) return `,"err":${json(fields)}`;
+    if (!isFieldObject(fields)) return `,"err":${json(fields)}`;
     let out = "";
     for (const key in fields) {
         const text = json(fields[key]);
@@ -128,7 +143,7 @@ class StdoutSink {
                 this.hooked = true;
                 globalThis.process?.on?.("exit", this.flush);
             }
-            setImmediate(this.flush);
+            later(this.flush);
         }
     };
 
@@ -232,6 +247,7 @@ export class Logger {
     private readonly bound: string;
     private readonly fields: Readonly<Record<string, unknown>> | undefined;
 
+    /** `new Logger({ write })` captures lines in tests. The second parameter is internal (children). */
     constructor(options: LoggerOptions = {}, parent?: { root: LogRoot; module: string | undefined; fields?: Readonly<Record<string, unknown>> }) {
         this.root = parent?.root ?? new LogRoot(options);
         this.module = parent?.module;
@@ -329,7 +345,10 @@ export class Logger {
         let line = `${time(new Date())} ${color ? `${COLORS[level]}${tag}\x1b[0m` : tag}`;
         if (this.module !== undefined) line += color ? ` \x1b[1m${this.module}\x1b[0m` : ` ${this.module}`;
         line += ` ${msg}`;
-        const all: Record<string, unknown> = { ...this.fields, ...(fields instanceof Error ? { err: fields } : fields) };
+        const all: Record<string, unknown> = {
+            ...this.fields,
+            ...(fields === undefined ? undefined : isFieldObject(fields) ? fields : { err: fields }),
+        };
         let stack = "";
         for (const key in all) {
             const value = all[key];

@@ -1,5 +1,5 @@
 import { ErrorCode, HttpError, SparkusError } from "./errors.js";
-import { checkDefault, enumCases, oneOf, type Issue, type Schema } from "./schema.js";
+import { checkDefault, defaultAndOptional, enumCases, oneOf, type Issue, type Schema } from "./schema.js";
 
 /**
  * Path parameters and query values arrive as strings. A route can declare
@@ -55,7 +55,10 @@ export function checkSchema(schema: Schema, source: Source, where: string, pathP
         if (field.kind === "enum" && (field.values === undefined || field.values.length === 0)) {
             throw invalidSchema(where, source, `field "${key}" is t.enum([]) without values. List at least one`);
         }
-        if (field.default !== undefined) checkDefault(field, where, `${source}.${key}`);
+        if (field.default !== undefined) {
+            if (field.optional) throw defaultAndOptional(where, `${source}.${key}`);
+            checkDefault(field, where, `${source}.${key}`);
+        }
     }
     if (source === "params") {
         const fields = Object.keys(schema.shape);

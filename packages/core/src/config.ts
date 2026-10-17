@@ -1,8 +1,19 @@
-import { token, type InjectionToken } from "./di.js";
+import { token, type InjectionToken, type Provider } from "./di.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import { compileValidator, oneOf, type ObjectType, type Schema } from "./schema.js";
 
 type ConfigShape = Record<string, Schema<unknown, boolean>>;
+
+/** A `config()` token: inject it, or replace it in tests with `override()`. */
+export interface ConfigToken<T> extends InjectionToken<T> {
+    /**
+     * A provider for tests: the given values, typed, over what the environment gives (defaults
+     * included). Values still pass the schema, and a required variable missing from both is SPK1018.
+     *
+     *     createTestApp({ controllers, providers, overrides: [AppConfig.override({ PAGE_SIZE: 5 })] })
+     */
+    override(values: Partial<T>): Provider<T>;
+}
 
 export interface ConfigOptions {
     /** Name of the token, shown in errors. Default: "Config". */
@@ -33,10 +44,18 @@ const SCALARS = new Set(["string", "integer", "number", "boolean", "enum"]);
  * missing or invalid variable stops the app with SPK1018, which lists them all. Values are never
  * printed: they may be secrets. In tests, provide the token: `{ provide: AppConfig, useValue: {...} }`.
  */
-export function config<S extends ConfigShape>(shape: S, options: ConfigOptions = {}): InjectionToken<Readonly<ObjectType<S>>> {
+export function config<S extends ConfigShape>(shape: S, options: ConfigOptions = {}): ConfigToken<Readonly<ObjectType<S>>> {
     const name = options.name ?? "Config";
     for (const [key, field] of Object.entries(shape)) checkField(name, key, field);
-    return token(name, () => loadConfig(shape, options.env ?? globalThis.process?.env ?? {}, name) as ObjectType<S>);
+    const env = () => options.env ?? globalThis.process?.env ?? {};
+    const configToken: ConfigToken<Readonly<ObjectType<S>>> = Object.freeze({
+        ...token(name, () => loadConfig(shape, env(), name) as ObjectType<S>),
+        override: (values: Partial<ObjectType<S>>) => ({
+            provide: configToken,
+            useFactory: () => loadConfig(shape, env(), name, values) as ObjectType<S>,
+        }),
+    });
+    return configToken;
 }
 
 function invalidShape(name: string, key: string, reason: string): SparkusError {
@@ -54,6 +73,9 @@ function checkField(name: string, key: string, field: Schema): void {
     }
     if (scalar.kind === "enum" && (scalar.values === undefined || scalar.values.length === 0)) {
         throw invalidShape(name, key, "is t.enum([]) without values. List at least one");
+    }
+    if (field.default !== undefined && field.optional) {
+        throw invalidShape(name, key, "has both t.optional() and a default. A default fills an unset variable: remove t.optional()");
     }
     if (field.default !== undefined) {
         const issue = compileValidator(field)(field.default);
@@ -75,6 +97,7 @@ function convert(field: Schema, raw: string): { value: unknown } | string {
             if (field.kind === "integer" ? !INTEGER.test(text) : !NUMBER.test(text)) return `must be ${field.kind === "integer" ? "an integer" : "a number"}`;
             const value = Number(text);
             if (field.kind === "integer" && !Number.isSafeInteger(value)) return "must be a safe integer";
+            if (!Number.isFinite(value)) return "must be a finite number";
             if (min !== undefined && value < min) return `must be >= ${min}`;
             if (max !== undefined && value > max) return `must be <= ${max}`;
             return { value };
@@ -85,8 +108,10 @@ function convert(field: Schema, raw: string): { value: unknown } | string {
             if (text === "false" || text === "0") return { value: false };
             return 'must be "true", "false", "1" or "0"';
         }
-        case "enum":
-            return field.values!.includes(raw) ? { value: raw } : `must be ${oneOf(field.values!)}`;
+        case "enum": {
+            const text = raw.trim();
+            return field.values!.includes(text) ? { value: text } : `must be ${oneOf(field.values!)}`;
+        }
         case "array": {
             const items: unknown[] = [];
             for (const part of raw.split(",")) {
@@ -105,10 +130,22 @@ function convert(field: Schema, raw: string): { value: unknown } | string {
     }
 }
 
-export function loadConfig(shape: ConfigShape, env: Readonly<Record<string, string | undefined>>, name: string): Readonly<Record<string, unknown>> {
+/** Reads the variables of `shape`; `given` (tests) replaces some of them with typed values. */
+export function loadConfig(
+    shape: ConfigShape,
+    env: Readonly<Record<string, string | undefined>>,
+    name: string,
+    given: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     const issues: string[] = [];
     for (const [key, field] of Object.entries(shape)) {
+        if (given[key] !== undefined) {
+            const issue = compileValidator(field)(given[key]);
+            if (issue !== null) issues.push(`${key} (override) ${issue.message}`);
+            else out[key] = given[key];
+            continue;
+        }
         const raw = env[key];
         if (raw === undefined || raw === "") {
             if (field.default !== undefined) out[key] = field.default;

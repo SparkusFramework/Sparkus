@@ -84,7 +84,8 @@ export class WebContext implements RequestContext {
     }
 
     abort(reason: unknown): void {
-        this.more?.controller?.abort(reason);
+        // Created here too: a handler that reads ctx.signal after the timeout gets it aborted.
+        (this.extras.controller ??= new AbortController()).abort(reason);
     }
 
     header(name: string): string | undefined {
@@ -118,10 +119,14 @@ const BINARY_TYPE = "application/octet-stream";
 
 /** A problem+json response. Headers set on the context come along; the error's own win. */
 export function errorResponse(rendered: RenderedError, headers: Record<string, string> | null = null): Response {
-    return new Response(rendered.body, {
-        status: rendered.status,
-        headers: headers === null ? rendered.headers : { ...headers, ...rendered.headers },
-    });
+    if (headers !== null) {
+        try {
+            return new Response(rendered.body, { status: rendered.status, headers: { ...headers, ...rendered.headers } });
+        } catch {
+            // A header the handler set is what failed (a newline in a value): send the error without it.
+        }
+    }
+    return new Response(rendered.body, { status: rendered.status, headers: rendered.headers });
 }
 
 function withHeaders(type: string, headers: Record<string, string> | null): Record<string, string> {
@@ -139,15 +144,7 @@ export function toResponse(
     const status = ctx.status;
 
     if (typeof value === "object" && value !== null) {
-        if (value instanceof Response) {
-            if (headers !== null) {
-                for (const name in headers) {
-                    // The handler's own Response wins over headers the app adds to every response.
-                    if (!value.headers.has(name)) value.headers.set(name, headers[name]!);
-                }
-            }
-            return value;
-        }
+        if (value instanceof Response) return headers === null ? value : withOwnHeaders(value, null, headers);
         if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
             // Typed loosely: Node's and Bun's BodyInit disagree on Uint8Array<ArrayBufferLike>, and
             // these sources must type check under the config of any project that imports them.
@@ -175,6 +172,22 @@ function setAll(target: Headers, headers: Readonly<Record<string, string>> | nul
 }
 
 /**
+ * A handler's own Response with the app's and the context's headers added where it has none.
+ * A copy: the original may be immutable (`Response.redirect()`, a `fetch()` result under Node)
+ * or shared between requests (a module-level constant).
+ */
+function withOwnHeaders(value: Response, base: Headers | null, own: Readonly<Record<string, string>> | null): Response {
+    const headers = new Headers(value.headers);
+    if (base !== null) {
+        base.forEach((header, name) => {
+            if (!headers.has(name)) headers.set(name, header);
+        });
+    }
+    setAll(headers, own, true);
+    return new Response(value.body, { status: value.status, statusText: value.statusText, headers });
+}
+
+/**
  * `toResponse` for an observed request: the app's headers for every response (security, CORS),
  * then the context's. Bun builds a Response's headers from a plain object at ~75 ns per entry, but
  * copies a Headers object in ~50 ns in all: the common ones are built once, then copied.
@@ -184,14 +197,7 @@ export function toObservedResponse(value: unknown, ctx: WebContext, base: Header
     const status = ctx.status;
 
     if (typeof value === "object" && value !== null) {
-        if (value instanceof Response) {
-            const target = value.headers;
-            base.forEach((header, name) => {
-                if (!target.has(name)) target.set(name, header);
-            });
-            setAll(target, own, true);
-            return value;
-        }
+        if (value instanceof Response) return withOwnHeaders(value, base, own);
         if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
             const headers = new Headers(base);
             headers.set("content-type", BINARY_TYPE);
@@ -218,7 +224,11 @@ export function toObservedResponse(value: unknown, ctx: WebContext, base: Header
 function observedErrorResponse(rendered: RenderedError, ctx: WebContext, base: Headers | null): Response {
     if (base === null) return errorResponse(rendered, ctx.responseHeaders);
     const headers = new Headers(base);
-    setAll(headers, ctx.responseHeaders, false);
+    try {
+        setAll(headers, ctx.responseHeaders, false);
+    } catch {
+        // A header the handler set is invalid: the error goes without it.
+    }
     setAll(headers, rendered.headers, false);
     return new Response(rendered.body, { status: rendered.status, headers });
 }
@@ -263,8 +273,17 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
     const init: ResponseInit | undefined = status === 200 ? undefined : { status };
     const activate = observer.activate;
     const base = observer.baseHeaders;
-    const respond = (value: unknown, ctx: WebContext): Response =>
-        base === null ? toResponse(value, ctx, init, status) : toObservedResponse(value, ctx, base);
+    /** The response for a value, or for the error building it threw; finished once, whatever happens. */
+    const respond = (value: unknown, ctx: WebContext): Response => {
+        let response: Response;
+        try {
+            response = base === null ? toResponse(value, ctx, init, status) : toObservedResponse(value, ctx, base);
+        } catch (error) {
+            response = observedErrorResponse(runtime.renderError(error, ctx), ctx, base);
+        }
+        observer.finish(ctx, response.status, path);
+        return response;
+    };
     const fail = (error: unknown, ctx: WebContext): Response => {
         const response = observedErrorResponse(runtime.renderError(error, ctx), ctx, base);
         observer.finish(ctx, response.status, path);
@@ -274,29 +293,20 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
     return (request, params) => {
         const ctx = new WebContext(request, params, status, runtime);
         observer.start(ctx, path, false);
+        let out: unknown;
         try {
             const span = ctx.extras.span;
-            const out = activate !== undefined && span !== undefined ? activate(span, () => run(ctx)) : run(ctx);
-            if (out instanceof Promise) {
-                return out.then(
-                    (value) => {
-                        try {
-                            const response = respond(value, ctx);
-                            observer.finish(ctx, response.status, path);
-                            return response;
-                        } catch (error) {
-                            return fail(error, ctx);
-                        }
-                    },
-                    (error) => fail(error, ctx),
-                );
-            }
-            const response = respond(out, ctx);
-            observer.finish(ctx, response.status, path);
-            return response;
+            out = activate !== undefined && span !== undefined ? activate(span, () => run(ctx)) : run(ctx);
         } catch (error) {
             return fail(error, ctx);
         }
+        if (out instanceof Promise) {
+            return out.then(
+                (value) => respond(value, ctx),
+                (error) => fail(error, ctx),
+            );
+        }
+        return respond(out, ctx);
     };
 }
 

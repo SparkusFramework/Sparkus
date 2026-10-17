@@ -76,6 +76,32 @@ for (const [label, start] of targets) {
             });
         });
 
+        describe("handler responses", () => {
+            test("a header value the runtime refuses is a 500, and the server keeps serving", async () => {
+                const res = await target.request("/ops/bad-header");
+                expect(res.status).toBe(500);
+                expect(res.headers.get("content-disposition")).toBeNull();
+                expectSecurityHeaders(res);
+                expect((await target.request("/items/1")).status).toBe(200);
+            });
+
+            test("Response.redirect() (immutable headers) gets the app's headers on a copy", async () => {
+                const res = await target.request("/ops/redirect", { redirect: "manual" });
+                expect(res.status).toBe(302);
+                expect(res.headers.get("location")).toBe("https://example.com/login");
+                expectSecurityHeaders(res);
+            });
+
+            test("a Response shared between requests never carries another request's headers", async () => {
+                const first = await target.request("/ops/shared", { headers: { "x-request-id": "first-1", origin: ORIGIN } });
+                const second = await target.request("/ops/shared", { headers: { "x-request-id": "second-2" } });
+                expect(first.status).toBe(204);
+                expect(first.headers.get("x-request-id")).toBe("first-1");
+                expect(second.headers.get("x-request-id")).toBe("second-2");
+                expect(second.headers.get("access-control-allow-origin")).toBeNull();
+            });
+        });
+
         describe("request id", () => {
             test("generated when the client sends none, in the header and in ctx.requestId", async () => {
                 const res = await target.request("/items/1");

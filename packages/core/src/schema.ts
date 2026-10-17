@@ -135,7 +135,10 @@ function checkShape(schema: Schema, where: string, path = "$"): void {
     if (schema.kind === "enum" && (schema.values === undefined || schema.values.length === 0)) {
         throw new SparkusError(ErrorCode.InvalidRouteSchema, `${where}: ${path} is t.enum([]) without values. List at least one.`);
     }
-    if (schema.default !== undefined) checkDefault(schema, where, path);
+    if (schema.default !== undefined) {
+        if (schema.optional) throw defaultAndOptional(where, path);
+        checkDefault(schema, where, path);
+    }
     if (schema.shape !== undefined) {
         for (const [key, child] of Object.entries(schema.shape)) {
             if (key === "__proto__") {
@@ -145,6 +148,14 @@ function checkShape(schema: Schema, where: string, path = "$"): void {
         }
     }
     if (schema.item !== undefined) checkShape(schema.item, where, `${path}[]`);
+}
+
+/** A field with a default is never absent: `t.optional()` around it means nothing, refuse the pair. */
+export function defaultAndOptional(where: string, path: string): SparkusError {
+    return new SparkusError(
+        ErrorCode.InvalidRouteSchema,
+        `${where}: ${path} has both t.optional() and a default. A default fills an absent value, so the field is never absent: remove t.optional().`,
+    );
 }
 
 /** Throws InvalidRouteSchema when a schema's default does not pass the schema itself. */

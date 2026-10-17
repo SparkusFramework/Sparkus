@@ -23,6 +23,7 @@ export interface RequestInit {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    redirect?: "manual";
 }
 
 export interface Target {

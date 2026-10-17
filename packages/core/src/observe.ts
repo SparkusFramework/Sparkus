@@ -160,6 +160,8 @@ export class Observer {
     private readonly exposed: string | null;
     private readonly echo: string | null;
     private readonly http: Logger | null;
+    /** Where failures of user callbacks (CORS origin test, telemetry) are reported. */
+    private readonly errors: Logger;
     private readonly tracer: Tracer | undefined;
     private readonly extract: TelemetryOptions["extract"];
     readonly activate: TelemetryOptions["activate"];
@@ -201,6 +203,7 @@ export class Observer {
         this.base = Object.keys(base).length === 0 ? null : Object.freeze(base);
         this.baseHeaders = this.base === null ? null : new Headers(this.base);
         this.echo = options.echoRequestId;
+        this.errors = options.log.child("sparkus");
         const http = options.log.child("http");
         // Levels are fixed per module: a disabled request log costs nothing per request.
         this.http = options.requests && http.enabled("info") ? http : null;
@@ -240,7 +243,7 @@ export class Observer {
         let headers: Record<string, string> | null = withBase && this.base !== null ? { ...this.base } : null;
         if (this.allowOrigin !== null) {
             const origin = ctx.header("origin");
-            if (origin !== undefined && this.allowOrigin(origin)) {
+            if (origin !== undefined && this.allows(origin)) {
                 headers ??= {};
                 headers["access-control-allow-origin"] = origin;
                 if (this.cors!.credentials === true) headers["access-control-allow-credentials"] = "true";
@@ -257,8 +260,27 @@ export class Observer {
             const agent = ctx.header("user-agent");
             if (agent !== undefined) attributes["user_agent.original"] = agent;
             const name = route === undefined ? method : `${method} ${route}`;
-            ctx.extras.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
+            try {
+                ctx.extras.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
+            } catch (error) {
+                // Telemetry never fails a request: no span for this one.
+                this.report("telemetry.extract or tracer.startSpan threw", error);
+            }
         }
+    }
+
+    /** A user's origin test that throws (`new URL("null")`) refuses the origin instead of failing the request. */
+    private allows(origin: string): boolean {
+        try {
+            return this.allowOrigin!(origin);
+        } catch (error) {
+            this.report("cors.origin threw", error);
+            return false;
+        }
+    }
+
+    private report(what: string, error: unknown): void {
+        this.errors.error(`${what}; the request goes on without it`, { err: error });
     }
 
     /**
@@ -288,25 +310,37 @@ export class Observer {
             const ms = performance.now() - extras.startTime;
             if (this.http !== null) logRequest(this.http, ctx, status, route, Math.round(ms * 100) / 100);
             if (this.duration !== undefined) {
-                const attributes: Attributes = {
-                    "http.request.method": KNOWN_METHODS.has(ctx.method) ? ctx.method : "_OTHER",
-                    "http.response.status_code": status,
-                    "url.scheme": "http",
-                };
-                if (route !== undefined) attributes["http.route"] = route;
-                if (status >= 500) attributes["error.type"] = String(status);
-                this.duration.record(ms / 1000, attributes);
+                try {
+                    this.record(ctx, status, route, ms);
+                } catch (error) {
+                    this.report("meter histogram.record threw", error);
+                }
             }
         }
         const span = extras.span;
         if (span !== undefined) {
-            span.setAttribute("http.response.status_code", status);
-            if (status >= 500) {
-                span.setAttribute("error.type", String(status));
-                span.setStatus({ code: SPAN_STATUS_ERROR });
+            try {
+                span.setAttribute("http.response.status_code", status);
+                if (status >= 500) {
+                    span.setAttribute("error.type", String(status));
+                    span.setStatus({ code: SPAN_STATUS_ERROR });
+                }
+                span.end();
+            } catch (error) {
+                this.report("span.end threw", error);
             }
-            span.end();
         }
+    }
+
+    private record(ctx: RequestContext, status: number, route: string | undefined, ms: number): void {
+        const attributes: Attributes = {
+            "http.request.method": KNOWN_METHODS.has(ctx.method) ? ctx.method : "_OTHER",
+            "http.response.status_code": status,
+            "url.scheme": "http",
+        };
+        if (route !== undefined) attributes["http.route"] = route;
+        if (status >= 500) attributes["error.type"] = String(status);
+        this.duration!.record(ms / 1000, attributes);
     }
 }
 

@@ -147,6 +147,22 @@ class OpsController {
         return new Response("own", { headers: { "x-frame-options": "ALLOW-FROM https://a.example" } });
     }
 
+    @Get("/bad-header")
+    badHeader(ctx: Ctx) {
+        ctx.setHeader("content-disposition", 'attachment; filename="a' + String.fromCharCode(10) + 'b"');
+        return "never sent";
+    }
+
+    @Get("/redirect")
+    redirect() {
+        return Response.redirect("https://example.com/login", 302);
+    }
+
+    @Get("/shared")
+    shared() {
+        return SHARED;
+    }
+
     @Get("/boom")
     boom(): never {
         throw new Error("kaboom");
@@ -160,6 +176,9 @@ class OpsController {
 }
 
 export const ORIGIN = "https://app.example.com";
+
+/** One Response object returned to every request: each must get its own headers. */
+const SHARED = new Response(null, { status: 204 });
 
 export function productionOptions(): Omit<AppOptions, "engine"> {
     return {

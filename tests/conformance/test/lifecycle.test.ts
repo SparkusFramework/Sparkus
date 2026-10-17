@@ -36,6 +36,17 @@ for (const engine of ["bun", "node"] as const) {
             expect(await hanging).toBe("cut");
         });
 
+        test("a handler slower than idleTimeout still answers (Bun's idle timer runs during handlers)", async () => {
+            const app = createApp({ ...fixtureOptions(), engine });
+            const { port } = await app.listen({ port: 0, hostname: "127.0.0.1", signals: false, idleTimeout: 1_000 });
+            try {
+                const res = await fetch(`http://127.0.0.1:${port}/sleep?ms=2500`);
+                expect(res.status).toBe(200);
+            } finally {
+                await app.close();
+            }
+        }, 10_000);
+
         test("close() is idempotent", async () => {
             const app = createApp({ ...fixtureOptions(), engine });
             await app.listen({ port: 0, hostname: "127.0.0.1", signals: false });

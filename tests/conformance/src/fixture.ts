@@ -193,6 +193,12 @@ class RootController {
         return { slow: true };
     }
 
+    @Get("/sleep")
+    async sleep(ctx: Ctx) {
+        await delay(Number(ctx.query.ms));
+        return { slept: true };
+    }
+
     @Get("/hang")
     async hang() {
         await delay(5_000);

@@ -2,7 +2,7 @@
 // Engine authors import "@sparkus/core/engine".
 
 export { createApp, SparkusApp, type AppOptions, type ListenOptions, type ListeningInfo, type RouteInfo } from "./app.js";
-export { config, type ConfigOptions } from "./config.js";
+export { config, type ConfigOptions, type ConfigToken } from "./config.js";
 export type { Ctx, HandlerResult, HttpMethod, RouteOptions } from "./context.js";
 export {
     Controller,

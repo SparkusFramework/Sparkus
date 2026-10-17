@@ -186,6 +186,9 @@ export class SparkusApp {
         const options = this.options;
         const log = this.logger();
         const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT;
+        // Checked under their own names: a bad app value must not be blamed on the first route.
+        checkInteger("bodyLimit", bodyLimit, "bytes");
+        checkInteger("requestTimeout", options.requestTimeout ?? 0, "milliseconds");
         const exposeErrors = options.exposeErrors ?? defaultExposeErrors();
         const routes = compileRoutes(
             {
@@ -217,7 +220,8 @@ export class SparkusApp {
         const security = options.securityHeaders;
         const observing = {
             log,
-            requests: log.logsRequests,
+            // A request log its level silences would keep every request on the observed path for nothing.
+            requests: log.logsRequests && log.child("http").enabled("info"),
             cors: options.cors === true ? { origin: "*" as const } : options.cors,
             securityHeaders: security === true ? {} : security === false ? undefined : security,
             echoRequestId: requestId === undefined || requestId === false ? null : requestIdHeader,
@@ -277,7 +281,7 @@ export class SparkusApp {
         }
         await this.init();
         const engine = await this.loadEngine();
-        const port = options.port ?? Number(globalThis.process?.env?.PORT ?? 3000);
+        const port = options.port ?? portFromEnv();
         const hostname = options.hostname ?? "0.0.0.0";
         this.shutdownTimeout = options.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
         this.shutdownDelay = options.shutdownDelay ?? 0;
@@ -385,6 +389,25 @@ export class SparkusApp {
     private notInitialized(what: string): SparkusError {
         return new SparkusError(ErrorCode.NotInitialized, `${what} needs an initialized app: await app.init() first.`);
     }
+}
+
+function checkInteger(name: string, value: number, unit: string): void {
+    if (!Number.isSafeInteger(value) || value < 0) {
+        throw new SparkusError(ErrorCode.InvalidOption, `${name} ${value} is not a number of ${unit}. Use an integer >= 0.`);
+    }
+}
+
+function portFromEnv(): number {
+    const raw = globalThis.process?.env?.PORT;
+    if (raw === undefined || raw === "") return 3000;
+    const port = Number(raw);
+    if (!/^\d+$/.test(raw.trim()) || port > 65535) {
+        throw new SparkusError(
+            ErrorCode.InvalidConfig,
+            `PORT must be an integer from 0 to 65535. Fix the PORT environment variable, or pass listen({ port }).`,
+        );
+    }
+    return port;
 }
 
 /** Creates an application. Nothing is resolved until init() or listen(). */
