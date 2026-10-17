@@ -211,16 +211,30 @@ export function renderInternalError(detail: string | undefined): RenderedError {
 
 // Errors raised by Sparkus while handling a request.
 
-export function routeNotFound(method: string, path: string, suggestion?: string): HttpError {
+// 404 and 405 never reach onError (no route, no context), so they are rendered straight to
+// text: a 404 flood costs one JSON.stringify of the detail, not an Error plus a problem object.
+// The output is byte for byte what renderHttpError gives for the same HttpError.
+const NOT_FOUND_HEAD = `{"type":"about:blank","title":"Not Found","status":404,"detail":`;
+const NOT_FOUND_TAIL = `,"code":"${ErrorCode.RouteNotFound}"}`;
+const NOT_ALLOWED_HEAD = `{"type":"about:blank","title":"Method Not Allowed","status":405,"detail":`;
+const NOT_ALLOWED_TAIL = `,"code":"${ErrorCode.MethodNotAllowed}"}`;
+
+/** `suggestion` (development only) is the closest route, added to the detail. */
+export function renderRouteNotFound(method: string, path: string, suggestion?: string): RenderedError {
     const hint = suggestion === undefined ? "" : ` Did you mean ${suggestion}?`;
-    return new HttpError(404, `No route matches ${method} ${path}.${hint}`, { code: ErrorCode.RouteNotFound });
+    return {
+        status: 404,
+        body: NOT_FOUND_HEAD + JSON.stringify(`No route matches ${method} ${path}.${hint}`) + NOT_FOUND_TAIL,
+        headers: PROBLEM_HEADERS,
+    };
 }
 
-export function methodNotAllowed(method: string, path: string, allow: string): HttpError {
-    return new HttpError(405, `${path} does not accept ${method}. Allowed: ${allow}.`, {
-        code: ErrorCode.MethodNotAllowed,
-        headers: { allow },
-    });
+export function renderMethodNotAllowed(method: string, path: string, allow: string): RenderedError {
+    return {
+        status: 405,
+        body: NOT_ALLOWED_HEAD + JSON.stringify(`${path} does not accept ${method}. Allowed: ${allow}.`) + NOT_ALLOWED_TAIL,
+        headers: { allow, "content-type": PROBLEM_TYPE },
+    };
 }
 
 export function malformedJson(empty: boolean): HttpError {

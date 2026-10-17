@@ -2,10 +2,10 @@ import type { CompiledRoute } from "./compile.js";
 import type { Ctx } from "./context.js";
 import {
     HttpError,
-    methodNotAllowed,
     renderHttpError,
     renderInternalError,
-    routeNotFound,
+    renderMethodNotAllowed,
+    renderRouteNotFound,
     type RenderedError,
 } from "./errors.js";
 import { suggestRoute } from "./suggest.js";
@@ -77,11 +77,11 @@ export class AppRuntime {
 
     notFound(method: string, path: string): RenderedError {
         const suggestion = this.options.exposeErrors ? suggestRoute(this.routes, method, path) : undefined;
-        return renderHttpError(routeNotFound(method, path, suggestion));
+        return renderRouteNotFound(method, path, suggestion);
     }
 
     methodNotAllowed(method: string, path: string, allow: string): RenderedError {
-        return renderHttpError(methodNotAllowed(method, path, allow));
+        return renderMethodNotAllowed(method, path, allow);
     }
 
     private log(error: unknown, ctx: Ctx<any> | undefined): void {
