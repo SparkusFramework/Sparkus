@@ -144,6 +144,22 @@ Contre-mesure en 5 rounds, ratios appariés (`bench/compare.ts`, aucune mesure b
 
 Critère de la phase 0 après la phase 3 : Sparkus/Bun à moins de 10 % de `Bun.serve` (94 à 99 %) ; **à égalité avec Elysia** sur `hello` et `params-query`, devant sur `post-validate` (le critère « devant Elysia » n'est donc prouvé que là) ; Sparkus/Node nettement devant Fastify. Avec toutes ses options de production, Sparkus/Node perd 6 à 7 % contre Fastify *sans aucune option*, et reste à son niveau sur `post-validate`.
 
+**Sous Linux** (D8, première mesure) : workflow `.github/workflows/bench.yml`, lancé à la main ou par le label `bench` sur une PR. Runner GitHub partagé à 4 vCPU, sans épinglage (trop peu de cœurs pour séparer serveur et générateur), 2 threads autocannon, 3 rounds ([rapport](bench/reference/2026-10-17-phase3-linux-github-actions.md)).
+
+| % du serveur brut | `hello` | `params-query` | `post-validate` |
+|---|---:|---:|---:|
+| Sparkus/Bun | 102 % | 105 % | **95 %** |
+| Elysia | 100 % | 102 % | 70 % |
+| Hono (Bun) | 99 % | 109 % | 62 % |
+| Sparkus/Bun, toutes options de prod | 78 % | 90 % | 71 % |
+| Sparkus/Node | 100 % | 100 % | 91 % |
+| Fastify | 90 % | 99 % | 91 % |
+| Sparkus/Node, toutes options de prod | 72 % | 83 % | 80 % |
+| Fastify avec logger | 42 % | 48 % | 53 % |
+| Express | 36 % | 41 % | 44 % |
+
+Lecture : sur cette petite machine, `hello` et `params-query` saturent le générateur de charge (les frameworks Bun dépassent tous le serveur brut, dans le bruit) : ils ne classent rien. `post-validate` classe : Sparkus/Bun devant Elysia de 36 % ; avec toutes ses options de prod, Sparkus/Bun reste au niveau d'Elysia sans option. Sous Node, Sparkus est au plafond et Fastify à égalité ou derrière. Ces chiffres sont un ordre de grandeur, pas une publication : D8 demande encore une machine Linux dédiée (épinglage, 5 rounds).
+
 **Options de prod sous Node, décomposées** (`hello`, 5 rounds, toutes prouvées) : logs −12,9 %, headers de sécurité −8,1 %, request id −7,7 %, CORS −4,2 %. Deux corrections, mesurées en A/B contre le commit précédent ([rapport](bench/reference/2026-10-17-ab-node-raw-headers.md)) :
 - Le moteur Node lit un header de requête dans `rawHeaders` au lieu de `req.headers`, que Node construit en entier à la première lecture.
 - Plus de listener `close` quand l'observateur n'a rien à finir (headers seuls).
@@ -160,7 +176,7 @@ Résultat : chemin nu **+2,1 % (`hello`) et +2,0 % (`params-query`), prouvés** 
 | D4 | oui | `inject(Logger)`, `inject(AppConfig)` ; les `HealthCheck` sont trouvés dans le conteneur, sans token. |
 | D5 | oui | `ctx.requestId`, `ctx.log`, `ctx.signal` typés ; `t.enum` et `default` inférés dans `Ctx<typeof Route>`. |
 | D6 | oui | Le même `t` décrit la config ; `enum` et `default` vont dans l'OpenAPI et le client généré. |
-| D8 | **non** | Toutes les mesures de la phase 3 sont faites sous Windows. Les chiffres Linux restent à produire. |
+| D8 | **en partie** | Première mesure Linux, sur un runner GitHub partagé (ordre de grandeur, voir plus haut). Les chiffres publiables demandent une machine Linux dédiée. |
 | D9 | oui | `check:deps` passe. OpenTelemetry est accepté par types structurels (SDK seulement en dev). `node:async_hooks` est un module intégré, chargé à la demande. |
 | D10 | oui | Une fixture « production » jouée sur les 4 cibles. Elle a révélé un écart réel (Bun coupait les handlers lents), corrigé. |
 | D11 | oui | Outillage inchangé (`bun check`, `bun build`). |
