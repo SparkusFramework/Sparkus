@@ -127,3 +127,12 @@ Pour des chiffres publiables, par ordre de préférence :
 2. **WSL 2** sur la machine de dev pour une première comparaison sous noyau Linux : `wsl --install -d Ubuntu-24.04` (installation par l'utilisateur, à faire soi-même), puis Bun, Node 24, `taskset` (paquet `util-linux`, présent par défaut). C'est une VM Hyper-V partageant le CPU avec Windows : utile pour vérifier que les écarts tiennent sous Linux, pas pour publier.
 
 Publier avec le JSON brut, la sortie de `lscpu`, `uname -a` et les versions (Bun, Node), comme le fait déjà l'en-tête de `latest.md`.
+
+## Session de référence
+
+[`reference/2026-10-17-windows.md`](reference/2026-10-17-windows.md) (+ JSON brut) : 8 cibles × 3 scénarios × 5 rounds, épinglé, Windows (non publiable, D8). À relancer sous Linux pour publier. Constats « prouvés » (5 rounds sur 5 du même côté) :
+
+- `sparkus-bun` est au plafond sur `hello` et `params-query` (≈ bun-raw), mais à **95 %** sur `post-validate` (bun-raw +5,2 %, et spike-bun devant lui).
+- `sparkus-node` est au plafond sur `hello`, à **91 %** sur `params-query` et **97 %** sur `post-validate` (node-raw devant, prouvé).
+- `spike-node` dépasse `node-raw` sur `hello` (103 %) et `sparkus-node` de 2,8 % (prouvé) : `node-raw` n'est pas un vrai plafond sous Node, et le moteur Node v1 a régressé sur `hello` par rapport au prototype.
+- Sparkus devance Elysia (+6,4 % sur `post-validate`, ≈ ailleurs) et Fastify (+15 à +20 %).
