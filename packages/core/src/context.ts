@@ -3,7 +3,10 @@ import type { Infer, Schema } from "./schema.js";
 export type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
 
 export interface RouteOptions {
-    /** Schema of the JSON body. The body is read and validated before the handler runs. */
+    /**
+     * Schema of the JSON body. The body is read and validated before the handler runs, and
+     * fields the schema does not list are dropped: `ctx.body` holds exactly its type.
+     */
     body?: Schema;
     /**
      * Types of the path parameters: `t.object({ id: t.integer() })`. Values are converted
@@ -14,7 +17,9 @@ export interface RouteOptions {
     query?: Schema;
     /**
      * Schema of the success response. The handler's return type is checked against it at
-     * compile time, and it documents the response in OpenAPI. Not validated at runtime.
+     * compile time, and it documents the response in OpenAPI. At runtime, fields it does not
+     * list are dropped before interceptors run: an entity's internal fields never leak.
+     * Scalar values are not re-validated (the types vouch for them).
      */
     response?: Schema;
     /** Status of a successful response. Defaults to 200 (204 when the handler returns nothing). */

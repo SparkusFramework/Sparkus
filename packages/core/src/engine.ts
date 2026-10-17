@@ -18,5 +18,5 @@ export { generateOpenApi, toJsonSchema } from "./openapi.js";
 export { parseQuery } from "./query.js";
 export { Router, decodeParam, type Match } from "./router.js";
 export { AppRuntime } from "./runtime.js";
-export { compileValidator, type Validator } from "./schema.js";
+export { compileParser, compileProjector, compileValidator, type Parser, type Projector, type Validator } from "./schema.js";
 export { WebContext, createFetchHandler, createWebHandler, errorResponse, toResponse, type WebHandler } from "./web.js";

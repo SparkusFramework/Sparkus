@@ -2,7 +2,7 @@ import type { Ctx, RequestContext } from "./context.js";
 import type { Class, Container } from "./di.js";
 import { ErrorCode, HttpError, SparkusError, guardRejected } from "./errors.js";
 import type { Coercer } from "./coerce.js";
-import type { Issue, Validator } from "./schema.js";
+import type { Issue, Parser, Projector } from "./schema.js";
 
 /** A guard lets a request through by returning `true`. Anything else answers 403. */
 export type GuardFn = (ctx: Ctx<any>) => boolean | Promise<boolean>;
@@ -93,10 +93,11 @@ export interface PipelineParts {
     handler: Run;
     guards: readonly GuardFn[];
     interceptors: readonly InterceptorFn[];
-    /** Read the JSON body before validation. */
-    readBody: boolean;
-    validate: Validator | null;
+    /** Validates the JSON body and keeps its declared fields (route `body` schema). Null: the body is not read. */
+    parseBody: Parser | null;
     bodyLimit: number;
+    /** Reduces the handler's value to its declared fields (route `response` schema). */
+    project: Projector | null;
     /** Converts and validates path parameters (route `params` schema). */
     coerceParams: Coercer | null;
     /** Converts and validates query parameters (route `query` schema). */
@@ -105,7 +106,7 @@ export interface PipelineParts {
 
 /**
  * Builds the function that runs a route, from the inside out:
- * guards -> interceptors -> body reading -> validation -> handler.
+ * guards -> interceptors -> body reading and validation -> handler -> projection.
  *
  * Each stage exists only when the route needs it: a route without guards,
  * interceptors or body is its bound handler, nothing more. The result is
@@ -114,22 +115,23 @@ export interface PipelineParts {
 export function composePipeline(parts: PipelineParts): Run {
     let run = parts.handler;
 
-    if (parts.validate !== null) {
-        const validate = parts.validate;
+    // Right after the handler, so interceptors see the value the client will get.
+    if (parts.project !== null) {
+        const project = parts.project;
         const handler = run;
         run = (ctx) => {
-            const issue = validate(ctx.body);
-            if (issue !== null) throw validationFailed(issue);
-            return handler(ctx);
+            const out = handler(ctx);
+            return out instanceof Promise ? out.then(project) : project(out);
         };
     }
 
-    if (parts.readBody) {
+    if (parts.parseBody !== null) {
+        const parse = parts.parseBody;
         const next = run;
         const limit = parts.bodyLimit;
         run = (ctx) =>
             ctx.readBody(limit).then((body) => {
-                ctx.body = body;
+                ctx.body = parse(body);
                 return next(ctx);
             });
     }

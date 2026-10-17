@@ -301,7 +301,76 @@ class TypedController {
     }
 }
 
-export const controllers = [RootController, UserController, FileController, AdminController, TypedController];
+const Profile = {
+    body: t.object({
+        name: t.string(),
+        address: t.optional(t.object({ city: t.string() })),
+        links: t.optional(t.array(t.object({ url: t.string() }))),
+        tags: t.optional(t.array(t.string())),
+    }),
+};
+
+const PublicUser = {
+    response: t.object({
+        id: t.integer(),
+        name: t.string(),
+        nickname: t.optional(t.string()),
+        address: t.object({ city: t.string() }),
+        roles: t.array(t.object({ name: t.string() })),
+    }),
+};
+
+/** What a database would return: more than the API may show. */
+function loadEntity() {
+    return {
+        id: 1,
+        name: "Ada",
+        passwordHash: "$argon2id$secret",
+        address: { city: "London", street: "12 private road" },
+        roles: [
+            { name: "admin", grantedBy: "root" },
+            { name: "author", grantedBy: "admin" },
+        ],
+    };
+}
+
+@Controller("/schema")
+class SchemaController {
+    @Post("/body", Profile)
+    body(ctx: Ctx<typeof Profile>) {
+        return { keys: Object.keys(ctx.body), body: ctx.body, prototype: Object.getPrototypeOf(ctx.body) === Object.prototype };
+    }
+
+    @Get("/entity", PublicUser)
+    entity() {
+        return loadEntity();
+    }
+
+    @Get("/entity-async", PublicUser)
+    async entityAsync() {
+        await delay(1);
+        return loadEntity();
+    }
+
+    @Get("/entity-wrapped", PublicUser)
+    @UseInterceptors(envelope)
+    entityWrapped() {
+        return loadEntity();
+    }
+
+    @Get("/entity-raw", PublicUser)
+    entityRaw(): Response {
+        return new Response('{"raw":true}', { headers: { "content-type": "application/json" } });
+    }
+
+    @Get("/mismatch", PublicUser)
+    mismatch() {
+        // A cast hides the bug from the compiler; the projection still refuses to guess.
+        return { ...loadEntity(), roles: "admin" } as unknown as ReturnType<typeof loadEntity>;
+    }
+}
+
+export const controllers = [RootController, UserController, FileController, AdminController, TypedController, SchemaController];
 
 export function fixtureOptions(): Omit<AppOptions, "engine"> {
     return {

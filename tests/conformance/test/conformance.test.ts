@@ -255,6 +255,70 @@ for (const [label, start] of targets) {
             });
         });
 
+        describe("undeclared fields", () => {
+            const post = (body: string) => target.request("/schema/body", { method: "POST", headers: JSON_BODY, body });
+
+            test("unknown body fields are dropped, at every depth", async () => {
+                const res = await post(
+                    JSON.stringify({
+                        name: "Ada",
+                        role: "admin",
+                        address: { city: "London", isAdmin: true },
+                        links: [{ url: "https://a.example", trusted: true }],
+                        tags: ["x"],
+                    }),
+                );
+                expectJson(res, 200, {
+                    keys: ["name", "address", "links", "tags"],
+                    body: { name: "Ada", address: { city: "London" }, links: [{ url: "https://a.example" }], tags: ["x"] },
+                    prototype: true,
+                });
+            });
+
+            test("absent optional fields stay absent", async () => {
+                expectJson(await post(JSON.stringify({ tags: ["x"], name: "Ada" })), 200, {
+                    keys: ["name", "tags"],
+                    body: { name: "Ada", tags: ["x"] },
+                    prototype: true,
+                });
+            });
+
+            test("a __proto__ key in the body is dropped like any unknown field", async () => {
+                expectJson(await post('{"name":"Ada","__proto__":{"isAdmin":true}}'), 200, {
+                    keys: ["name"],
+                    body: { name: "Ada" },
+                    prototype: true,
+                });
+            });
+
+            const PUBLIC = { id: 1, name: "Ada", address: { city: "London" }, roles: [{ name: "admin" }, { name: "author" }] };
+
+            test("the response keeps only the fields of its schema", async () => {
+                const res = await target.request("/schema/entity");
+                expectJson(res, 200, PUBLIC);
+                expect(res.text).not.toContain("argon2id");
+                expect(res.text).not.toContain("private road");
+            });
+
+            test("async handlers are projected the same way", async () => {
+                expectJson(await target.request("/schema/entity-async"), 200, PUBLIC);
+            });
+
+            test("interceptors receive the projected value", async () => {
+                expectJson(await target.request("/schema/entity-wrapped"), 200, { data: PUBLIC });
+            });
+
+            test("a Response is sent as it is", async () => {
+                expectJson(await target.request("/schema/entity-raw"), 200, { raw: true });
+            });
+
+            test("a value that does not match the response schema is a 500 naming the route and the path", async () => {
+                const problem = expectProblem(await target.request("/schema/mismatch"), 500, { code: "SPK5001" });
+                expect(problem.detail).toContain("GET /schema/mismatch (SchemaController.mismatch)");
+                expect(problem.detail).toContain("$.roles must be an array, got string");
+            });
+        });
+
         describe("errors", () => {
             test("unexpected error is 500 without stack", async () => {
                 const problem = expectProblem(await target.request("/boom"), 500, { code: "SPK5000" });

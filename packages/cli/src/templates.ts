@@ -196,7 +196,8 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 - Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`. Add every controller to \`controllers\` in \`src/app.ts\`.
 - Inputs are typed by schemas next to the controller: \`{ params, query, body }\` built with \`t\`. The handler takes \`ctx: Ctx<typeof Route>\`. Never parse or validate \`ctx.params\`, \`ctx.query\` or \`ctx.body\` by hand.
-- \`ctx.body\` may carry fields the schema does not list. Copy the fields you store one by one; never \`{ ...ctx.body }\` or \`Object.assign(entity, ctx.body)\` (a client could send \`id\`).
+- \`ctx.body\` holds only the fields its schema lists (unknown ones are dropped), so a client cannot sneak in an \`id\` or a \`role\`.
+- Declare a \`response\` schema on routes that return records: only its fields are sent, so internal fields (password hashes, foreign keys) never leak. Return entities as they are; do not copy fields by hand.
 - Services are plain classes. Get them with \`private readonly x = inject(XService)\` in a field. Never constructor parameters, never \`new\` on a service, never \`inject()\` inside a method. Startup work goes in \`onInit()\`.
 - Config values are tokens: \`export const API_KEY = token<string>("API_KEY")\`, provided in \`providers\` in \`src/app.ts\`, read with \`inject(API_KEY)\`.
 - Auth is a guard class (add-guard skill). It stores the user in \`ctx.state\`; handlers type it: \`ctx: Ctx<typeof Route, { user: User }>\`.
@@ -245,7 +246,7 @@ description: Add an HTTP endpoint to this Sparkus app (route, typed inputs, test
    \`\`\`
 
    Business logic belongs in the service. Throw \`HttpError\` with a \`code\` for expected failures.
-   Pass the service the fields it needs (\`ctx.body.name\`), not \`ctx.body\` itself: it may hold extra fields.
+   \`ctx.body\` holds only the fields \`UpdateUser.body\` lists: pass it whole or field by field.
    Behind a guard that sets \`ctx.state.user\`, type it: \`ctx: Ctx<typeof UpdateUser, { user: User }>\`.
 4. Add tests in \`<feature>.test.ts\`: the success case and each error (\`res.json().code\`).
 5. Run \`bunx sparkus check --json\`, then \`bun test\`.

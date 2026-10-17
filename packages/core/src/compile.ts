@@ -18,13 +18,14 @@ import {
     type InterceptorFn,
     type InterceptorLike,
     type Run,
+    validationFailed,
 } from "./pipeline.js";
 import { checkSchema, compileCoercer } from "./coerce.js";
-import { compileValidator, type Schema } from "./schema.js";
+import { compileParser, compileProjector, type Schema } from "./schema.js";
 
 /**
  * A route resolved at startup: controller bound, guards and interceptors
- * resolved, validator compiled, pipeline composed. Engines only plug `run`
+ * resolved, schemas compiled, pipeline composed. Engines only plug `run`
  * into their server.
  */
 export interface CompiledRoute {
@@ -150,7 +151,7 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
             ];
             const body = route.options.body;
             const where = `${id} (${handlerName})`;
-            const { params, query } = route.options;
+            const { params, query, response } = route.options;
             if (params !== undefined) checkSchema(params, "params", where, paramNames);
             if (query !== undefined) checkSchema(query, "query", where, paramNames);
 
@@ -163,16 +164,16 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                 body,
                 params,
                 query,
-                response: route.options.response,
+                response,
                 guards: guards.length,
                 interceptors: interceptors.length,
                 run: composePipeline({
                     handler: method.bind(instance) as (ctx: RequestContext) => unknown,
                     guards,
                     interceptors,
-                    readBody: body !== undefined,
-                    validate: body === undefined ? null : compileValidator(body),
+                    parseBody: body === undefined ? null : compileParser(body, validationFailed, where),
                     bodyLimit: options.bodyLimit,
+                    project: response === undefined ? null : compileProjector(response, where),
                     coerceParams: params === undefined ? null : compileCoercer(params, "params"),
                     coerceQuery: query === undefined ? null : compileCoercer(query, "query"),
                 }),

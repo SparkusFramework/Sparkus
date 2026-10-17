@@ -48,6 +48,21 @@ export const extraScenarios: Scenario[] = [
     { name: "pipe-interceptor", description: "GET, 1 interceptor", method: "GET", path: "/p/interceptor", expect: HELLO },
     { name: "pipe-interceptors-3", description: "GET, 3 interceptors", method: "GET", path: "/p/interceptors-3", expect: HELLO },
     {
+        name: "list",
+        description: "GET /users, 10 records reduced to 4 of their 6 fields (Sparkus targets only)",
+        method: "GET",
+        path: "/users",
+        expect: {
+            status: 200,
+            body: Array.from({ length: 10 }, (_, i) => ({
+                id: i + 1,
+                name: "User " + (i + 1),
+                email: `user${i + 1}@example.com`,
+                admin: i === 0,
+            })),
+        },
+    },
+    {
         name: "error-404",
         description: "GET on an unknown path (404 flood)",
         method: "GET",
