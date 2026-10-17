@@ -107,6 +107,16 @@ for (const [label, start] of targets) {
                 });
             });
 
+            test("query: first key wins, decoded, no inherited keys", async () => {
+                const qs = "__proto__=a&toString=b&x=1&x=2&plus=a+b%21&bad=%E0%A4%A&empty&=v&&";
+                expectJson(await target.request("/query?" + qs), 200, {
+                    keys: ["__proto__", "toString", "x", "plus", "bad", "empty", ""],
+                    values: ["a", "b", "1", "a b!", "%E0%A4%A", "", "v"],
+                    inherited: "undefined",
+                });
+                expectJson(await target.request("/query"), 200, { keys: [], values: [], inherited: "undefined" });
+            });
+
             test("params are decoded", async () => {
                 expectJson(await target.request("/users/hello%20world"), 200, {
                     id: "hello world",

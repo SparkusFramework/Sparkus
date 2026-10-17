@@ -194,6 +194,12 @@ class RootController {
         await delay(5_000);
         return { hang: true };
     }
+
+    @Get("/query")
+    query(ctx: Ctx) {
+        const q = ctx.query;
+        return { keys: Object.keys(q), values: Object.values(q), inherited: typeof (q as any).hasOwnProperty };
+    }
 }
 
 @Controller("/users")
