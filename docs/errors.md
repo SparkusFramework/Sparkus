@@ -38,7 +38,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 
 | Code | Status | Meaning |
 |---|---|---|
-| SPK2001 | 404 | No route matches the method and path. Paths are case-sensitive and a trailing slash is a different path. |
+| SPK2001 | 404 | No route matches the method and path. Paths are case-sensitive and a trailing slash is a different path. In development and test, the detail suggests the closest route: `Did you mean GET /users/:id?` |
 | SPK2002 | 405 | The path exists, but not for this method. The `Allow` header lists the accepted methods. |
 | SPK2003 | 400 | The body is empty or not valid JSON. |
 | SPK2004 | 400 | The body does not match the route's schema. `issues` gives the path of the first invalid value (`$.age`) and what was expected. |

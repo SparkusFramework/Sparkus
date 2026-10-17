@@ -8,6 +8,7 @@ import {
     routeNotFound,
     type RenderedError,
 } from "./errors.js";
+import { suggestRoute } from "./suggest.js";
 
 /**
  * Maps an error before Sparkus renders it. Return an HttpError (or any error)
@@ -75,7 +76,8 @@ export class AppRuntime {
     }
 
     notFound(method: string, path: string): RenderedError {
-        return renderHttpError(routeNotFound(method, path));
+        const suggestion = this.options.exposeErrors ? suggestRoute(this.routes, method, path) : undefined;
+        return renderHttpError(routeNotFound(method, path, suggestion));
     }
 
     methodNotAllowed(method: string, path: string, allow: string): RenderedError {

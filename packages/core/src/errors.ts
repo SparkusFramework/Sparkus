@@ -199,8 +199,9 @@ export function renderInternalError(detail: string | undefined): RenderedError {
 
 // Errors raised by Sparkus while handling a request.
 
-export function routeNotFound(method: string, path: string): HttpError {
-    return new HttpError(404, `No route matches ${method} ${path}.`, { code: ErrorCode.RouteNotFound });
+export function routeNotFound(method: string, path: string, suggestion?: string): HttpError {
+    const hint = suggestion === undefined ? "" : ` Did you mean ${suggestion}?`;
+    return new HttpError(404, `No route matches ${method} ${path}.${hint}`, { code: ErrorCode.RouteNotFound });
 }
 
 export function methodNotAllowed(method: string, path: string, allow: string): HttpError {
