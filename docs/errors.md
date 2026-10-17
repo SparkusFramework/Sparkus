@@ -24,11 +24,11 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 | SPK1006 | Two routes use different parameter names at the same position (`/users/:id` and `/users/:userId/posts`). | Use the same name at the same position. |
 | SPK1007 | No HTTP engine is available, or the Bun engine was requested outside Bun. | Import `createApp` from `sparkus` (it picks Bun or Node), or pass `engine: "node"`. |
 | SPK1008 | A guard or interceptor is neither a function nor a class with `canActivate()` / `intercept()`. | Pass `(ctx) => boolean`, `(ctx, next) => unknown`, or a class implementing `Guard` / `Interceptor`. |
-| SPK1009 | A constructor threw. The message shows the dependency path and the original error (`cause`). | Fix the constructor. Move I/O (connections, file reads) to `onInit()`. |
+| SPK1009 | A constructor threw, or declares parameters (`constructor(private users: UserService)`: Sparkus calls `new X()` without arguments). The message shows the dependency path and the original error (`cause`). | Fix the constructor. Move I/O (connections, file reads) to `onInit()`. Declare dependencies as fields: `private readonly users = inject(UserService)`. |
 | SPK1010 | A provider was registered after its token was already resolved. | Register providers and test overrides before `init()` / `listen()`. |
 | SPK1011 | A class with `onInit()` was first resolved after startup, so its hook would never run. | Inject it somewhere at startup, or resolve it with `app.get()` before `listen()`. |
 | SPK1012 | `app.fetch()` or `app.routes` used before the app is initialized. | `await app.init()` first. |
-| SPK1013 | A `token()` has no factory and no provider. | Add `providers: [{ provide: TOKEN, useValue: ... }]`, or give the token a default factory. |
+| SPK1013 | A `token()` has no factory and no provider. The message names the classes that needed it. | Add `{ provide: TOKEN, useValue: ... }` to `providers`, in `createApp()` and in `createTestApp()`, or give the token a default factory: `token("TOKEN", () => ...)`. |
 | SPK1014 | Invalid route path: empty segment, bad parameter name, repeated parameter, or unsupported syntax (`*`, `?`, `(`). | Use static segments and `:name` parameters (letters, digits, `_`, `$`). |
 | SPK1015 | `listen()` called twice on the same app. | Create one app per server. |
 | SPK1016 | An `onInit()` or `onShutdown()` hook failed. | See `cause`. A failing `onInit()` stops startup; failing `onShutdown()` hooks are reported together after all of them ran. |

@@ -48,6 +48,12 @@ function tokenName(token: Token): string {
     return token.name || "<anonymous>";
 }
 
+/** The message of a caught error, ending with a period so a fix can follow it. */
+function reason(error: unknown): string {
+    const message = (error instanceof Error ? error.message : String(error)).trim();
+    return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 /**
  * Resolves a dependency while Sparkus constructs a controller, a service, a
  * guard or an interceptor. Use it in a field initializer or in a constructor:
@@ -59,7 +65,8 @@ export function inject<T>(token: Token<T>): T {
         throw new SparkusError(
             ErrorCode.InjectOutsideConstruction,
             `inject(${tokenName(token)}) called outside a construction managed by Sparkus. ` +
-                "Call it in a field initializer or constructor, not at module level or in a method.",
+                `Call it in a field initializer (private readonly x = inject(${tokenName(token)})) or a constructor, ` +
+                "not at module level or in a method.",
         );
     }
     return active.get(token);
@@ -124,7 +131,8 @@ export class Container {
             const path = this.resolving.map(tokenName).join(" -> ");
             throw new SparkusError(
                 ErrorCode.ConstructionFailed,
-                `Could not construct ${tokenName(token)} (${path}): ${error instanceof Error ? error.message : String(error)}`,
+                `Could not construct ${tokenName(token)} (${path}): ${reason(error)} ` +
+                    "Fix the constructor (see cause); do I/O in onInit(), not in the constructor.",
                 { cause: error },
             );
         } finally {
@@ -147,13 +155,33 @@ export class Container {
     }
 
     private build<T>(token: Token<T>, provider: Provider<T> | undefined): T {
-        if (provider !== undefined) return "useClass" in provider ? new provider.useClass() : (provider as { useFactory: () => T }).useFactory();
-        if (typeof token === "function") return new token();
+        if (provider !== undefined) {
+            if ("useClass" in provider) return this.construct(provider.useClass);
+            return (provider as { useFactory: () => T }).useFactory();
+        }
+        if (typeof token === "function") return this.construct(token);
         if (token.factory !== undefined) return token.factory();
+        const neededBy = this.resolving.slice(0, -1).map(tokenName).join(" -> ");
         throw new SparkusError(
             ErrorCode.NoProvider,
-            `No provider for token ${token.name}. Add providers: [{ provide: ${token.name}, useValue: ... }], or give the token a factory.`,
+            `No provider for token ${token.name}${neededBy ? ` (needed by ${neededBy})` : ""}. ` +
+                `Add { provide: ${token.name}, useValue: ... } to providers in createApp() and createTestApp(), ` +
+                `or give the token a default: token("${token.name}", () => ...).`,
         );
+    }
+
+    private construct<T>(type: Class<T>): T {
+        // Constructor injection (NestJS style) would get undefined arguments and fail on the
+        // first request; refuse it at startup instead.
+        if (type.length > 0) {
+            const path = this.resolving.length > 1 ? ` (${this.resolving.map(tokenName).join(" -> ")})` : "";
+            throw new SparkusError(
+                ErrorCode.ConstructionFailed,
+                `${type.name || "<anonymous>"} has constructor parameters${path}, but Sparkus constructs classes without ` +
+                    "arguments. Declare dependencies as fields instead: private readonly users = inject(UserService).",
+            );
+        }
+        return new type();
     }
 
     /** Runs every `onInit()` hook, dependencies first. */
@@ -166,7 +194,8 @@ export class Container {
             } catch (error) {
                 throw new SparkusError(
                     ErrorCode.LifecycleFailed,
-                    `${instance.constructor.name}.onInit() failed: ${error instanceof Error ? error.message : String(error)}`,
+                    `${instance.constructor.name}.onInit() failed: ${reason(error)} ` +
+                        "Fix the hook (see cause), or catch the error inside it if the app can start without it.",
                     { cause: error },
                 );
             }

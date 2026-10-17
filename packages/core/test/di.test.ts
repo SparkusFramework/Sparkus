@@ -59,6 +59,44 @@ describe("Container", () => {
         expect(() => new Container().get(SECRET)).toThrow("[SPK1013]");
     });
 
+    test("a missing provider names who needed the token", () => {
+        const SECRET = token<string>("SECRET");
+        class Auth {
+            secret = inject(SECRET);
+        }
+        class Guard {
+            auth = inject(Auth);
+        }
+        expect(() => new Container().get(Guard)).toThrow("[SPK1013] No provider for token SECRET (needed by Guard -> Auth).");
+    });
+
+    test("constructor parameters are refused at startup, not on the first request", () => {
+        class Users {}
+        class Controller {
+            constructor(readonly users: Users) {}
+        }
+        class Consumer {
+            c = inject(Controller as never);
+        }
+        expect(() => new Container().get(Consumer)).toThrow(
+            "[SPK1009] Controller has constructor parameters (Consumer -> Controller), but Sparkus constructs classes without arguments.",
+        );
+        const container = new Container();
+        container.provide({ provide: Users, useClass: Controller as never });
+        expect(() => container.get(Users)).toThrow("[SPK1009] Controller has constructor parameters");
+    });
+
+    test("a failing onInit() says how to fix it", async () => {
+        class Cache {
+            onInit() {
+                throw new Error("redis down");
+            }
+        }
+        const container = new Container();
+        container.get(Cache);
+        await expect(container.init()).rejects.toThrow("[SPK1016] Cache.onInit() failed: redis down. Fix the hook");
+    });
+
     test("providers: useClass and useFactory can inject", () => {
         class Clock {
             now() {
