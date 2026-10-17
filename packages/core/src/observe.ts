@@ -3,7 +3,7 @@
  * header, one log line per request, and OpenTelemetry spans and metrics. Built once at startup;
  * when none of it is on, the runtime has no observer and engines keep their plain request path.
  */
-import type { RequestContext } from "./context.js";
+import type { Ctx, RequestContext } from "./context.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import type { Logger } from "./log.js";
 
@@ -51,7 +51,7 @@ export interface TelemetryOptions {
      * Parent context of the server span, usually from the `traceparent` header:
      * `(ctx) => propagation.extract(context.active(), ctx, { get: (c, key) => c.header(key), keys: () => [] })`.
      */
-    extract?: (ctx: RequestContext) => unknown;
+    extract?: (ctx: Ctx<any>) => unknown;
     /**
      * Runs the request inside the span's context, so spans your code starts are its children:
      * `(span, run) => context.with(trace.setSpan(context.active(), span as OtelSpan), run)`.
@@ -220,7 +220,8 @@ export class Observer {
 
     /** Called once the route is known (undefined: no route). Sets the response headers to start with. */
     start(ctx: RequestContext, route: string | undefined): void {
-        if (this.timed) ctx.startTime = performance.now();
+        const extras = ctx.extras;
+        if (this.timed) extras.startTime = performance.now();
         let headers: Record<string, string> | null = this.base === null ? null : { ...this.base };
         if (this.allowOrigin !== null) {
             const origin = ctx.header("origin");
@@ -241,7 +242,7 @@ export class Observer {
             const agent = ctx.header("user-agent");
             if (agent !== undefined) attributes["user_agent.original"] = agent;
             const name = route === undefined ? method : `${method} ${route}`;
-            ctx.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
+            extras.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
         }
     }
 
@@ -264,8 +265,9 @@ export class Observer {
 
     /** Called with the final status: request log line, duration metric, end of the span. */
     finish(ctx: RequestContext, status: number, route: string | undefined): void {
+        const extras = ctx.extras;
         if (this.timed) {
-            const ms = performance.now() - ctx.startTime;
+            const ms = performance.now() - extras.startTime;
             if (this.http !== null) {
                 this.http.info(`${ctx.method} ${ctx.path} ${status}`, {
                     reqId: ctx.requestId,
@@ -287,7 +289,7 @@ export class Observer {
                 this.duration.record(ms / 1000, attributes);
             }
         }
-        const span = ctx.span;
+        const span = extras.span;
         if (span !== undefined) {
             span.setAttribute("http.response.status_code", status);
             if (status >= 500) {

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerOptions, type ServerResp
 import type { AddressInfo } from "node:net";
 import {
     NO_PARAMS,
+    RequestExtras,
     Router,
     isJsonContentType,
     malformedJson,
@@ -16,7 +17,7 @@ import {
     type RenderedError,
     type RequestContext,
 } from "@sparkus/core/engine";
-import type { Logger, Span } from "@sparkus/core";
+import type { Logger } from "@sparkus/core";
 
 type Params = Readonly<Record<string, string>>;
 type NodeHandler = (req: IncomingMessage, res: ServerResponse, params: Params, path: string, rawQuery: string) => void;
@@ -28,13 +29,9 @@ const BINARY_TYPE = "application/octet-stream";
 class NodeContext implements RequestContext {
     body: any = undefined;
     responseHeaders: Record<string, string> | null = null;
-    startTime = 0;
-    span: Span | undefined = undefined;
     private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
-    private id: string | undefined = undefined;
-    private logger: Logger | undefined = undefined;
-    private controller: AbortController | undefined = undefined;
+    private more: RequestExtras | undefined = undefined;
 
     constructor(
         readonly req: IncomingMessage,
@@ -62,28 +59,35 @@ class NodeContext implements RequestContext {
         return (this.store ??= {});
     }
 
+    get extras(): RequestExtras {
+        return (this.more ??= new RequestExtras());
+    }
+
     get requestId(): string {
-        return (this.id ??= this.app.requestId(this.header(this.app.requestIdHeader)));
+        const extras = this.extras;
+        return (extras.id ??= this.app.requestId(this.header(this.app.requestIdHeader)));
     }
 
     get log(): Logger {
-        return (this.logger ??= this.app.log.with({ reqId: this.requestId }));
+        const extras = this.extras;
+        return (extras.logger ??= this.app.log.with({ reqId: this.requestId }));
     }
 
     get signal(): AbortSignal {
-        if (this.controller === undefined) {
-            const controller = (this.controller = new AbortController());
+        const extras = this.extras;
+        if (extras.controller === undefined) {
+            const controller = (extras.controller = new AbortController());
             const res = this.res;
             // "close" also follows a complete response: only an unfinished one means the client left.
             res.once("close", () => {
                 if (!res.writableFinished) controller.abort(new DOMException("The client disconnected.", "AbortError"));
             });
         }
-        return this.controller.signal;
+        return extras.controller.signal;
     }
 
     abort(reason: unknown): void {
-        this.controller?.abort(reason);
+        this.more?.controller?.abort(reason);
     }
 
     header(name: string): string | undefined {
@@ -261,7 +265,7 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
         const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
         observer.start(ctx, routePath);
         res.once("close", () => observer.finish(ctx, res.statusCode, routePath));
-        const span = ctx.span;
+        const span = ctx.extras.span;
         dispatch(res, ctx, runtime, activate !== undefined && span !== undefined ? () => activate(span, () => run(ctx)) : () => run(ctx));
     };
 }

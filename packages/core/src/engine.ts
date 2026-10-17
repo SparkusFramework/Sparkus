@@ -3,7 +3,7 @@
 
 export type { Engine, EngineListenOptions, EngineServer } from "./app.js";
 export type { CompiledRoute } from "./compile.js";
-export { NO_PARAMS, type RequestContext } from "./context.js";
+export { NO_PARAMS, RequestExtras, type RequestContext } from "./context.js";
 export { Container } from "./di.js";
 export {
     PROBLEM_TYPE,

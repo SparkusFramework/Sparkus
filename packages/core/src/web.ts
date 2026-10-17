@@ -1,8 +1,8 @@
 import type { CompiledRoute } from "./compile.js";
-import { NO_PARAMS, type RequestContext } from "./context.js";
+import { NO_PARAMS, RequestExtras, type RequestContext } from "./context.js";
 import { isJsonContentType, malformedJson, payloadTooLarge, unsupportedMediaType, type RenderedError } from "./errors.js";
 import type { Logger } from "./log.js";
-import type { BareResponse, Observer, Span } from "./observe.js";
+import type { BareResponse, Observer } from "./observe.js";
 import { parseQuery } from "./query.js";
 import { Router } from "./router.js";
 import type { AppRuntime } from "./runtime.js";
@@ -21,13 +21,9 @@ function pathOf(url: string): string {
 export class WebContext implements RequestContext {
     body: any = undefined;
     responseHeaders: Record<string, string> | null = null;
-    startTime = 0;
-    span: Span | undefined = undefined;
     private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
-    private id: string | undefined = undefined;
-    private logger: Logger | undefined = undefined;
-    private controller: AbortController | undefined = undefined;
+    private more: RequestExtras | undefined = undefined;
 
     constructor(
         readonly request: Request,
@@ -61,27 +57,34 @@ export class WebContext implements RequestContext {
         return (this.store ??= {});
     }
 
+    get extras(): RequestExtras {
+        return (this.more ??= new RequestExtras());
+    }
+
     get requestId(): string {
-        return (this.id ??= this.app.requestId(this.request.headers.get(this.app.requestIdHeader)));
+        const extras = this.extras;
+        return (extras.id ??= this.app.requestId(this.request.headers.get(this.app.requestIdHeader)));
     }
 
     get log(): Logger {
-        return (this.logger ??= this.app.log.with({ reqId: this.requestId }));
+        const extras = this.extras;
+        return (extras.logger ??= this.app.log.with({ reqId: this.requestId }));
     }
 
     get signal(): AbortSignal {
-        if (this.controller === undefined) {
-            const controller = (this.controller = new AbortController());
+        const extras = this.extras;
+        if (extras.controller === undefined) {
+            const controller = (extras.controller = new AbortController());
             // Bun aborts the request's signal when the client disconnects.
             const client = this.request.signal;
             if (client.aborted) controller.abort(client.reason);
             else client.addEventListener("abort", () => controller.abort(client.reason), { once: true });
         }
-        return this.controller.signal;
+        return extras.controller.signal;
     }
 
     abort(reason: unknown): void {
-        this.controller?.abort(reason);
+        this.more?.controller?.abort(reason);
     }
 
     header(name: string): string | undefined {
@@ -208,7 +211,8 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
         };
         const fail = (error: unknown) => done(errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders));
         try {
-            const out = activate !== undefined && ctx.span !== undefined ? activate(ctx.span, () => run(ctx)) : run(ctx);
+            const span = ctx.extras.span;
+            const out = activate !== undefined && span !== undefined ? activate(span, () => run(ctx)) : run(ctx);
             if (out instanceof Promise) {
                 return out.then((value) => {
                     try {

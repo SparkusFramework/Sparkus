@@ -98,10 +98,8 @@ export interface RequestContext extends Ctx<any> {
      * they start with its CORS, security and request id headers.
      */
     responseHeaders: Record<string, string> | null;
-    /** `performance.now()` when an observed request started, 0 otherwise. */
-    startTime: number;
-    /** Server span of an observed request (telemetry), undefined otherwise. */
-    span: Span | undefined;
+    /** Values most requests never use, created on first access. */
+    readonly extras: RequestExtras;
     /** Aborts `signal` (request timeout). */
     abort(reason: unknown): void;
     /**
@@ -109,6 +107,20 @@ export interface RequestContext extends Ctx<any> {
      * content type is not JSON, 413 above `limit` bytes, 400 when malformed.
      */
     readBody(limit: number): Promise<unknown>;
+}
+
+/**
+ * Per-request values most requests never touch: kept out of the contexts so the plain
+ * request path builds a smaller object, and allocated on first use.
+ */
+export class RequestExtras {
+    id: string | undefined = undefined;
+    logger: Logger | undefined = undefined;
+    controller: AbortController | undefined = undefined;
+    /** `performance.now()` when an observed request started. */
+    startTime = 0;
+    /** Server span of an observed request (telemetry). */
+    span: Span | undefined = undefined;
 }
 
 export const NO_PARAMS: Readonly<Record<string, string>> = Object.freeze(Object.create(null));

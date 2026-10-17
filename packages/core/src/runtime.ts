@@ -112,6 +112,6 @@ export class AppRuntime {
             return;
         }
         this.errors.error(`Unhandled error in ${ctx.method} ${ctx.path}`, { err: error, reqId: ctx.requestId });
-        (ctx as RequestContext).span?.recordException(error);
+        (ctx as RequestContext).extras.span?.recordException(error);
     }
 }
