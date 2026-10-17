@@ -166,6 +166,8 @@ Lecture : sur cette petite machine, `hello` et `params-query` saturent le géné
 
 Résultat : chemin nu **+2,1 % (`hello`) et +2,0 % (`params-query`), prouvés** ; profils observés ≈ (médianes de +0,8 à +3,6 %, 4 mesures bruitées). L'écart restant de Sparkus/Node avec toutes ses options face à Fastify sans aucune option (−6 à −7 % sur `hello` et `params-query`) est le prix des fonctions de prod elles-mêmes : Fastify n'en a aucune active dans cette comparaison.
 
+Essai écarté : écrire le tampon de logs toutes les 10 ms au lieu de chaque tour de boucle. A/B contre le commit précédent, 5 rounds, logs seuls et profil prod, Bun et Node : **≈ sur les 8 cas** ([rapport](bench/reference/2026-10-17-ab-log-flush-rejected.md)). Le coût des logs de requête ne vient donc pas des écritures sur stdout. Le changement aurait retardé les lignes et en aurait exposé davantage à une perte en cas de crash : non gardé.
+
 **Conformité aux décisions.** La phase 3 relue décision par décision :
 
 | # | Tenu ? | Comment |
