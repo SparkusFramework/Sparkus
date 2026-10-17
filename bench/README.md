@@ -26,6 +26,7 @@ bun run bench
 | `--workers N` | 4 | threads autocannon (un seul thread plafonne avant `bun-raw`) |
 | `--pin 0\|1` | 1 | épinglage CPU, voir « Méthode » |
 | `--baseline <ref git>` | – | mode A/B, voir plus bas |
+| `--label nom` | – | écrit aussi `results/<nom>.md` (sessions enchaînées) |
 
 `NODE_BIN` choisit le binaire Node des cibles Node et d'autocannon (par défaut `node` du PATH ; il faut Node 22+).
 
@@ -60,7 +61,13 @@ Coût : 2 cibles × 3 scénarios × 5 rounds × ~9 s ≈ 5 min de verrou par mot
 - **Épinglage CPU** (`--pin 1`) : le serveur a un cœur physique pour lui seul (ses deux threads SMT, CPU 2 et 3 sur 16 CPU logiques), autocannon tourne sur la moitié haute des cœurs, le cœur 0 reste à l'OS. Windows : `ProcessorAffinity` ; Linux : `taskset`.
 - **Contexte machine** : un échantillonneur relève chaque seconde l'horloge effective du CPU et la charge totale. Chaque mesure enregistre le CPU du serveur, celui d'autocannon et celui de **tous les autres process**. Une mesure où les autres process dépassent 150 % d'un cœur est signalée « bruitée ».
 - Mémoire : pic de RSS du process serveur, médiane des rounds.
-- **Un seul bench à la fois par machine** : `run.ts` prend un verrou dans le dossier temporaire du système (partagé par tous les checkouts et worktrees) et attend s'il est pris. Un verrou laissé par un process mort est repris. Tout script de mesure ad hoc doit prendre le même verrou (`acquireMachineLock()` de `system.ts`).
+- **Un seul bench à la fois par machine** : `run.ts` prend un verrou dans le dossier temporaire du système (partagé par tous les checkouts et worktrees) et attend s'il est pris, **dans l'ordre d'arrivée** (file `sparkus-bench.queue`). Un verrou laissé par un process mort est repris. Toute mesure ad hoc (profil, sonde, script maison) passe par le même verrou :
+
+  ```bash
+  bun with-lock.ts -- node --cpu-prof server.js --- bun run.ts --targets sparkus-node --label a
+  ```
+
+  `with-lock.ts` tient le verrou pour toute la chaîne (commandes séparées par `---`) ; un `run.ts` lancé dedans ne l'attend pas. Dans un script, `acquireMachineLock()`, `cpuLayout()` et `setAffinity()` de `system.ts`. Garder chaque prise de verrou courte : les autres attendent.
 
 ## La dérive sous Windows : cause trouvée
 

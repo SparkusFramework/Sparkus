@@ -8,11 +8,11 @@
  *
  *   bun run.ts [--targets a,b] [--scenarios a,b] [--rounds 3] [--duration 10]
  *              [--warmup 3] [--cooldown 0] [--connections 100] [--workers 4]
- *              [--pin 1] [--baseline <git-ref>]
+ *              [--pin 1] [--baseline <git-ref>] [--label name]
  *
  * --pin 1 (default) gives each server a physical core of its own and keeps
  * autocannon on other cores: an SMT sibling shared with a busy thread costs a
- * single-threaded server up to a third of its throughput.
+ * single-threaded server 17 to 51 % of its throughput (README).
  *
  * --baseline builds Sparkus at <git-ref> in a temporary clone and adds a
  * "<target>@<ref>" twin for every selected Sparkus target: an A/B session.
@@ -57,6 +57,8 @@ const config = {
     pin: (args.get("pin") ?? "1") !== "0" && logicalCpus >= 8,
     baseline: baselineRef,
     nodeBin: process.env.NODE_BIN ?? "node",
+    /** Also writes results/<label>.md, so chained sessions keep their summaries. */
+    label: args.get("label"),
 };
 
 /** A sample is "noisy" when other processes used more than this much CPU (% of one core) during it. */
@@ -521,7 +523,7 @@ const resultsDir = join(benchDir, "results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 writeFileSync(
-    join(resultsDir, `${stamp}.json`),
+    join(resultsDir, `${stamp}${config.label ? "-" + config.label : ""}.json`),
     JSON.stringify(
         { config: { ...config, targets: runs, runtimes }, samples, peakMemory: Object.fromEntries(peakMemory) },
         null,
@@ -529,5 +531,6 @@ writeFileSync(
     ),
 );
 writeFileSync(join(resultsDir, "latest.md"), summary);
+if (config.label) writeFileSync(join(resultsDir, `${config.label}.md`), summary);
 console.log("\n" + summary);
 process.exit(0);

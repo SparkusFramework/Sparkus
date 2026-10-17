@@ -28,6 +28,13 @@ const isAlive = (pid: number) => {
  */
 export async function acquireMachineLock(): Promise<void> {
     const path = join(tmpdir(), "sparkus-bench.lock");
+    // Started by with-lock.ts, which already holds the lock for us.
+    const inherited = process.env.SPARKUS_BENCH_LOCK_OWNER;
+    if (inherited) {
+        try {
+            if (readFileSync(path, "utf8") === inherited && isAlive(Number(inherited))) return;
+        } catch {}
+    }
     const queue = join(tmpdir(), "sparkus-bench.queue");
     mkdirSync(queue, { recursive: true });
     const ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}`;
