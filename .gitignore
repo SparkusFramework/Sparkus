@@ -13,3 +13,6 @@ tests/*/dist
 *.tsbuildinfo
 packages/cli/test/tmp-init
 packages/cli/test/tmp-dev
+# Copied from the root by scripts/build.ts
+packages/sparkus/llms.txt
+packages/sparkus/docs

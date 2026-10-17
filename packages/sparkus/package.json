@@ -12,7 +12,7 @@
             "default": "./dist/index.js"
         }
     },
-    "files": ["dist", "src"],
+    "files": ["dist", "src", "llms.txt", "docs"],
     "repository": {
         "type": "git",
         "url": "https://github.com/SparkusFramework/Sparkus.git",

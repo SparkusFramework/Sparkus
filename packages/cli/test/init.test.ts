@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { initProject, packageName } from "../src/init.js";
 import { main } from "../src/main.js";
 
@@ -17,7 +17,15 @@ describe("sparkus init", () => {
     test("generates a project that passes check and its own tests", async () => {
         rmSync(root, { recursive: true, force: true });
         const { files } = initProject("tmp-init", import.meta.dir);
-        for (const file of ["AGENTS.md", "CLAUDE.md", ".claude/settings.json", ".claude/skills/add-endpoint/SKILL.md", "src/app.ts"]) {
+        const expected = [
+            "AGENTS.md",
+            "CLAUDE.md",
+            ".claude/settings.json",
+            ".claude/skills/add-endpoint/SKILL.md",
+            ".claude/skills/add-guard/SKILL.md",
+            "src/app.ts",
+        ];
+        for (const file of expected) {
             expect(files).toContain(file);
             expect(existsSync(join(root, file))).toBe(true);
         }
@@ -42,6 +50,17 @@ describe("sparkus init", () => {
         const typecheck = Bun.spawnSync([process.execPath, "check"], { cwd: root, stdout: "pipe", stderr: "pipe" });
         expect(typecheck.exitCode).toBe(0);
     }, 60_000);
+
+    test("the reference AGENTS.md points to ships with the sparkus package", () => {
+        const agents = readFileSync(join(import.meta.dir, "..", "src", "templates.ts"), "utf8");
+        // "sparkus" resolves to src/index.ts under Bun.
+        const sparkus = join(dirname(Bun.resolveSync("sparkus", import.meta.dir)), "..");
+        for (const file of ["llms.txt", "docs/errors.md"]) {
+            expect(agents).toContain(`node_modules/sparkus/${file}`);
+            expect(existsSync(join(sparkus, file))).toBe(true);
+            expect(JSON.parse(readFileSync(join(sparkus, "package.json"), "utf8")).files).toContain(file.split("/")[0]);
+        }
+    });
 
     test("refuses a folder that is not empty", () => {
         expect(() => initProject("fixtures", import.meta.dir)).toThrow("fixtures is not empty");

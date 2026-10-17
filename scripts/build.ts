@@ -5,7 +5,7 @@
 //
 // Also bundles the conformance fixture into one self-contained file, which
 // the conformance suite runs in a real Node process.
-import { rmSync } from "node:fs";
+import { cpSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -56,4 +56,9 @@ await Promise.all(
 );
 
 if (failed) process.exit(1);
+
+// The reference an agent reads in a generated project (its AGENTS.md points there):
+// node_modules/sparkus/llms.txt and node_modules/sparkus/docs/errors.md.
+cpSync(join(root, "llms.txt"), join(root, "packages/sparkus/llms.txt"));
+cpSync(join(root, "docs/errors.md"), join(root, "packages/sparkus/docs/errors.md"));
 console.log(`Built ${targets.length} targets in ${Math.round(performance.now() - started)} ms.`);

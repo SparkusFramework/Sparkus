@@ -66,6 +66,7 @@ export function projectFiles(name: string): Record<string, string> {
         ),
         ".claude/skills/add-endpoint/SKILL.md": SKILL_ENDPOINT,
         ".claude/skills/add-service/SKILL.md": SKILL_SERVICE,
+        ".claude/skills/add-guard/SKILL.md": SKILL_GUARD,
         ".claude/skills/write-test/SKILL.md": SKILL_TEST,
         ".claude/skills/fix-sparkus-error/SKILL.md": SKILL_ERROR,
     };
@@ -73,13 +74,16 @@ export function projectFiles(name: string): Record<string, string> {
     return files;
 }
 
-const APP = `import { createApp } from "sparkus";
+const APP = `import { createApp, type Provider } from "sparkus";
 import { UserController } from "./users/users.controller.ts";
 
 // Every controller is listed here. Services are not: inject() creates them.
 export const controllers = [UserController];
 
-export default createApp({ controllers });
+// Values for token()s (config, secrets). Tests reuse both lists: createTestApp({ controllers, providers }).
+export const providers: Provider[] = [];
+
+export default createApp({ controllers, providers });
 `;
 
 const MAIN = `import app from "./app.ts";
@@ -135,25 +139,25 @@ export class UserController {
 
 const USERS_TEST = `import { createTestApp } from "@sparkus/testing";
 import { expect, test } from "bun:test";
-import { controllers } from "../app.ts";
+import { controllers, providers } from "../app.ts";
 import { UserService } from "./users.service.ts";
 
 test("GET /users/:id", async () => {
-    const app = await createTestApp({ controllers });
+    const app = await createTestApp({ controllers, providers });
     const res = await app.inject({ url: "/users/1" });
     expect(res.status).toBe(200);
     expect(res.json()).toEqual({ id: 1, name: "Ada" });
 });
 
 test("unknown user is a 404 with a code", async () => {
-    const app = await createTestApp({ controllers });
+    const app = await createTestApp({ controllers, providers });
     const res = await app.inject({ url: "/users/99" });
     expect(res.status).toBe(404);
     expect(res.json().code).toBe("USER_NOT_FOUND");
 });
 
 test("POST /users validates the body", async () => {
-    const app = await createTestApp({ controllers });
+    const app = await createTestApp({ controllers, providers });
     expect((await app.inject({ method: "POST", url: "/users", body: { name: "Grace" } })).status).toBe(201);
     expect((await app.inject({ method: "POST", url: "/users", body: { name: "" } })).json().code).toBe("SPK2004");
 });
@@ -161,6 +165,7 @@ test("POST /users validates the body", async () => {
 test("a fake service replaces the real one", async () => {
     const app = await createTestApp({
         controllers,
+        providers,
         overrides: [{ provide: UserService, useValue: { find: () => ({ id: 7, name: "Fake" }) } }],
     });
     expect((await app.inject({ url: "/users/7" })).json()).toEqual({ id: 7, name: "Fake" });
@@ -175,7 +180,7 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 | Command | Use |
 |---|---|
-| \`bunx sparkus check --json\` | After every change. Wires the app without starting it; prints the first error with its code. |
+| \`bunx sparkus check --json\` | After every change. Wires the app without starting it; prints the first error with its code, and \`warnings\` (controllers missing from \`src/app.ts\`). |
 | \`bun test\` | Run the tests. |
 | \`bun check\` | Type check. |
 | \`bunx sparkus routes\` | List the routes. |
@@ -183,7 +188,7 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 ## Layout
 
-- \`src/app.ts\` lists every controller and exports the app. \`src/main.ts\` starts it.
+- \`src/app.ts\` lists every controller and provider and exports the app. \`src/main.ts\` starts it.
 - One feature per folder: \`src/<feature>/<feature>.controller.ts\`, \`<feature>.service.ts\`, \`<feature>.test.ts\`.
 - One class per file.
 
@@ -191,14 +196,22 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 - Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`. Add every controller to \`controllers\` in \`src/app.ts\`.
 - Inputs are typed by schemas next to the controller: \`{ params, query, body }\` built with \`t\`. The handler takes \`ctx: Ctx<typeof Route>\`. Never parse or validate \`ctx.params\`, \`ctx.query\` or \`ctx.body\` by hand.
-- Services are plain classes. Get them with \`private readonly x = inject(XService)\` in a field. Never call \`new\` on a service, never \`inject()\` inside a method.
+- \`ctx.body\` may carry fields the schema does not list. Copy the fields you store one by one; never \`{ ...ctx.body }\` or \`Object.assign(entity, ctx.body)\` (a client could send \`id\`).
+- Services are plain classes. Get them with \`private readonly x = inject(XService)\` in a field. Never constructor parameters, never \`new\` on a service, never \`inject()\` inside a method. Startup work goes in \`onInit()\`.
+- Config values are tokens: \`export const API_KEY = token<string>("API_KEY")\`, provided in \`providers\` in \`src/app.ts\`, read with \`inject(API_KEY)\`.
+- Auth is a guard class (add-guard skill). It stores the user in \`ctx.state\`; handlers type it: \`ctx: Ctx<typeof Route, { user: User }>\`.
 - Errors: \`throw HttpError.notFound("...", { code: "THING_NOT_FOUND" })\` (also \`badRequest\`, \`unauthorized\`, \`forbidden\`, \`conflict\`). Clients get problem+json with your \`code\`.
 - Return plain objects from handlers (sent as JSON). Set \`ctx.status\` or \`ctx.setHeader()\` when needed.
-- Tests use \`createTestApp\` and \`inject()\`: no port, no server. Replace a service with \`overrides\`.
+- Tests use \`createTestApp({ controllers, providers })\` and \`inject()\`: no port, no server. Replace a service with \`overrides\`.
 
 ## Sparkus errors
 
 Codes \`SPK1xxx\` stop the app at startup, \`SPK2xxx\` are request errors sent to clients. The message names the culprit and the fix. Use the fix-sparkus-error skill.
+
+## Reference
+
+- \`node_modules/sparkus/llms.txt\`: the whole API on one page (routes, schemas, ctx, DI, guards, errors, testing, CLI).
+- \`node_modules/sparkus/docs/errors.md\`: every error code, its cause and its fix.
 `;
 
 const SKILL_ENDPOINT = `---
@@ -216,7 +229,12 @@ description: Add an HTTP endpoint to this Sparkus app (route, typed inputs, test
    };
    \`\`\`
 
-   \`params\` must name exactly the path's \`:parameters\`. \`query\` fields are optional with \`t.optional()\`.
+   \`params\` must name exactly the path's \`:parameters\`. \`query\` fields are optional with \`t.optional()\`:
+
+   \`\`\`ts
+   const ListUsers = { query: t.object({ page: t.optional(t.integer({ min: 1 })) }) };
+   // in the handler: const page = ctx.query.page ?? 1;
+   \`\`\`
 3. Add the method:
 
    \`\`\`ts
@@ -227,6 +245,8 @@ description: Add an HTTP endpoint to this Sparkus app (route, typed inputs, test
    \`\`\`
 
    Business logic belongs in the service. Throw \`HttpError\` with a \`code\` for expected failures.
+   Pass the service the fields it needs (\`ctx.body.name\`), not \`ctx.body\` itself: it may hold extra fields.
+   Behind a guard that sets \`ctx.state.user\`, type it: \`ctx: Ctx<typeof UpdateUser, { user: User }>\`.
 4. Add tests in \`<feature>.test.ts\`: the success case and each error (\`res.json().code\`).
 5. Run \`bunx sparkus check --json\`, then \`bun test\`.
 `;
@@ -236,11 +256,11 @@ name: add-service
 description: Add a service (business logic, data access) to this Sparkus app and inject it. Use when logic should move out of a controller or be shared.
 ---
 
-1. Create \`src/<feature>/<feature>.service.ts\` with a plain class, no constructor arguments.
+1. Create \`src/<feature>/<feature>.service.ts\` with a plain class, no constructor parameters (Sparkus calls \`new X()\`).
 2. Dependencies come from fields: \`private readonly db = inject(Database);\`.
 3. Startup work (connections, cache warm-up) goes in \`onInit()\`, cleanup in \`onShutdown()\`. Both may be async.
 4. Use it from a controller with \`private readonly things = inject(ThingService);\`. Services are singletons: never \`new\` them, never list them in \`controllers\`.
-5. For config values or interfaces, use a token: \`export const API_KEY = token<string>("API_KEY");\`, provided in \`createApp({ providers: [{ provide: API_KEY, useValue: ... }] })\`.
+5. For config values or interfaces, use a token: \`export const API_KEY = token<string>("API_KEY");\`, added to \`providers\` in \`src/app.ts\`: \`{ provide: API_KEY, useValue: process.env.API_KEY ?? "dev-key" }\`. Read it with \`inject(API_KEY)\`.
 6. Run \`bunx sparkus check --json\`. A dependency cycle is \`SPK1002\`.
 `;
 
@@ -252,11 +272,12 @@ description: Write or fix tests for this Sparkus app with createTestApp and inje
 \`\`\`ts
 import { createTestApp } from "@sparkus/testing";
 import { expect, test } from "bun:test";
-import { controllers } from "../app.ts";
+import { controllers, providers } from "../app.ts";
 
 test("GET /things/:id", async () => {
     const app = await createTestApp({
         controllers,
+        providers,
         overrides: [{ provide: ThingRepository, useValue: fakeRepository }],
     });
     const res = await app.inject({ method: "GET", url: "/things/1" });
@@ -266,7 +287,8 @@ test("GET /things/:id", async () => {
 \`\`\`
 
 - \`inject()\` runs the full pipeline (routing, guards, validation, errors) in memory. No port.
-- Bodies: \`body: { ... }\` is sent as JSON.
+- Bodies: \`body: { ... }\` is sent as JSON. Headers: \`headers: { authorization: "Bearer ..." }\`.
+- Always pass \`providers\` from \`src/app.ts\`: without them, tokens fail with SPK1013.
 - Errors are problem+json: assert \`res.status\` and \`res.json().code\`.
 - Replace slow or external dependencies with \`overrides\`, never real network calls.
 - Run \`bun test\`.
@@ -277,7 +299,7 @@ name: fix-sparkus-error
 description: Diagnose and fix a Sparkus error code (SPK1xxx at startup, SPK2xxx in responses). Use when sparkus check, a test or a response shows an SPK code.
 ---
 
-Run \`bunx sparkus check --json\`. The message names the class, route or value at fault, then the fix.
+Run \`bunx sparkus check --json\`. The message names the class, route or value at fault, then the fix. A \`warnings\` entry names a controller missing from \`controllers\` in \`src/app.ts\` (its routes are 404s). Every code: \`node_modules/sparkus/docs/errors.md\`.
 
 | Code | Usual fix |
 |---|---|
@@ -286,13 +308,47 @@ Run \`bunx sparkus check --json\`. The message names the class, route or value a
 | SPK1003 | Same method and path twice: remove or rename one route. |
 | SPK1004 | A class in \`controllers\` lacks \`@Controller()\`; services are never listed there. |
 | SPK1006 | Use the same \`:param\` name at the same position in every path. |
-| SPK1009 | A constructor threw: see \`cause\`; move I/O to \`onInit()\`. |
-| SPK1013 | A \`token()\` has no provider: add it to \`providers\`. |
+| SPK1009 | A constructor threw (see \`cause\`; move I/O to \`onInit()\`), or has parameters: use \`inject()\` in fields. |
+| SPK1013 | A \`token()\` has no provider: add it to \`providers\` in \`src/app.ts\`; tests pass \`providers\` to \`createTestApp\`. |
+| SPK1016 | An \`onInit()\` threw: see \`cause\`. |
 | SPK1014 | Invalid path: static segments and \`:name\` only. |
 | SPK1017 | \`params\` must list exactly the path's parameters; schemas are flat scalars. |
 | SPK2001 / SPK2002 | No route for this path / method. Check \`bunx sparkus routes\`. |
 | SPK2003 / SPK2005 | Send a JSON body with \`content-type: application/json\`. |
 | SPK2004 | Input does not match the schema: \`issues[0].path\` names the value. |
-| SPK2007 | A guard refused the request. |
+| SPK2007 | A guard returned something other than \`true\`. Throw \`HttpError.unauthorized(..., { code })\` for a 401. |
 | SPK5000 | Your code threw a non-HttpError: fix it, or map it with \`onError\`. |
+`;
+
+const SKILL_GUARD = `---
+name: add-guard
+description: Protect routes with a guard (bearer token, API key, roles) and pass the authenticated user to handlers. Use when asked for auth or access control.
+---
+
+1. Create \`src/auth/auth.guard.ts\`:
+
+   \`\`\`ts
+   import { HttpError, inject, type Ctx, type Guard } from "sparkus";
+   import { AuthService } from "./auth.service.ts";
+
+   export class AuthGuard implements Guard {
+       private readonly auth = inject(AuthService);
+
+       canActivate(ctx: Ctx) {
+           const header = ctx.header("authorization");
+           if (!header?.startsWith("Bearer ")) throw HttpError.unauthorized("Missing bearer token.", { code: "AUTH_MISSING" });
+           const user = this.auth.verify(header.slice(7));
+           if (user === undefined) throw HttpError.unauthorized("Invalid bearer token.", { code: "AUTH_INVALID" });
+           ctx.state.user = user;
+           return true;
+       }
+   }
+   \`\`\`
+
+   Return \`true\` to let the request through; anything else is a 403 (SPK2007). Throw an \`HttpError\` for a 401 or your own code.
+2. Apply it: \`@UseGuards(AuthGuard)\` on the controller (every route) or on one method; \`createApp({ guards: [AuthGuard] })\` for the whole app.
+3. Handlers read the user through a typed state: \`create(ctx: Ctx<typeof CreateThing, { user: User }>)\`, then \`ctx.state.user\`.
+4. Secrets are tokens provided in \`src/app.ts\` (add-service skill). Guards are never listed in \`controllers\`.
+5. Test each case: no header (401 and your code), a bad token, a good one: \`inject({ url, headers: { authorization: "Bearer ..." } })\`.
+6. Run \`bunx sparkus check --json\`, then \`bun test\`.
 `;
