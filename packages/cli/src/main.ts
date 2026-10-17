@@ -92,6 +92,16 @@ const COMMANDS: Record<string, Command> = {
             return 0;
         },
     },
+    openapi: {
+        usage: "openapi [entry]",
+        summary: "Print the OpenAPI 3.1 document generated from the route schemas.",
+        run: async ({ positionals }) => {
+            const { app } = await loadApp(positionals[0], process.cwd());
+            await app.init();
+            print(true, app.openapi(), "");
+            return 0;
+        },
+    },
     version: {
         usage: "version",
         summary: "Print the CLI version.",

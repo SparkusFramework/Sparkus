@@ -3,6 +3,7 @@ import type { HttpMethod } from "./context.js";
 import { Container, type Class, type Provider, type Token } from "./di.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import type { GuardLike, InterceptorLike } from "./pipeline.js";
+import { generateOpenApi, type OpenApiOptions } from "./openapi.js";
 import { AppRuntime, type ErrorMapper, type Logger } from "./runtime.js";
 import { createFetchHandler } from "./web.js";
 
@@ -156,6 +157,11 @@ export class SparkusApp {
             guards: route.guards,
             interceptors: route.interceptors,
         }));
+    }
+
+    /** OpenAPI 3.1 description of the routes, from their schemas. Available after init(). */
+    openapi(options?: OpenApiOptions): Record<string, unknown> {
+        return generateOpenApi(this.requireRuntime("openapi()").routes, options);
     }
 
     /**

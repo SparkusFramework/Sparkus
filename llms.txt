@@ -89,6 +89,7 @@ const timing: InterceptorFn = async (ctx, next) => { const r = await next(); ctx
 
 - `await app.listen({ port?, hostname?, signals?, shutdownTimeout? })` → `{ engine, port, url }`. SIGINT/SIGTERM: stop accepting, finish in-flight requests, `onShutdown`, exit.
 - `await app.init()` wires everything without listening. `app.routes` lists the routes. `app.fetch(request)` is a web-standard handler.
+- `app.openapi({ title, version })` returns the OpenAPI 3.1 document built from the route schemas (after `init()`).
 - `await app.close()` shuts down.
 - `engine`: `"auto"` (default), `"bun"`, `"node"`.
 
@@ -108,6 +109,7 @@ In memory, full pipeline, no port.
 - `sparkus init <dir>`: new project with AGENTS.md, CLAUDE.md, skills, check hook.
 - `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`.
 - `sparkus routes [entry] --json`: list routes.
+- `sparkus openapi [entry]`: print the OpenAPI 3.1 document.
 - `sparkus dev [entry]`: run and restart on changes under src/.
 
 The entry exports the app (`export default app`), `src/app.ts` by default.

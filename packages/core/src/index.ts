@@ -56,6 +56,7 @@ export type {
     InterceptorLike,
     Next,
 } from "./pipeline.js";
+export { generateOpenApi, toJsonSchema, type OpenApiOptions } from "./openapi.js";
 export { parseQuery } from "./query.js";
 export { Router, decodeParam, type Match } from "./router.js";
 export { AppRuntime, type ErrorMapper, type Logger } from "./runtime.js";

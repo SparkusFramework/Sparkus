@@ -35,6 +35,8 @@ export interface CompiledRoute {
     /** "UserController.create", for errors and tooling. */
     readonly handlerName: string;
     readonly body: Schema | undefined;
+    readonly params: Schema | undefined;
+    readonly query: Schema | undefined;
     readonly guards: number;
     readonly interceptors: number;
     /** Runs the whole pipeline. Returns the handler's value, or a promise of it. */
@@ -144,6 +146,8 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                 status: route.options.status ?? 200,
                 handlerName,
                 body,
+                params,
+                query,
                 guards: guards.length,
                 interceptors: interceptors.length,
                 run: composePipeline({

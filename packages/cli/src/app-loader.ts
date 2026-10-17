@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 /** What the CLI needs from a Sparkus app. Duck-typed: the CLI has no dependency on the framework. */
 export interface InspectableApp {
     init(): Promise<void>;
+    openapi(options?: { title?: string; version?: string }): Record<string, unknown>;
     readonly routes: Array<{
         method: string;
         path: string;

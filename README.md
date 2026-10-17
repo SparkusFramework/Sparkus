@@ -74,6 +74,7 @@ Creates a project ready for humans and agents: an example feature with its tests
 | `sparkus dev [entry]` | Runs the app and restarts it on every change under `src/` (our own watcher, JSON events with `--json`). |
 | `sparkus check [entry]` | Wires the app (DI, routes, schemas) without listening; prints the first error with its code. |
 | `sparkus routes [entry]` | Lists the routes. |
+| `sparkus openapi [entry]` | Prints the OpenAPI 3.1 document generated from the route schemas (also `app.openapi()`). |
 
 ## Testing an app
 
