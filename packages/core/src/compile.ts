@@ -92,7 +92,8 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
         if (meta === undefined) {
             throw new SparkusError(
                 ErrorCode.MissingController,
-                `${controller.name} is listed in "controllers" but has no @Controller() decorator.`,
+                `${controller.name} is in "controllers" but has no @Controller(). ` +
+                    "Add it, or remove the class from controllers (services are created by inject()).",
             );
         }
 

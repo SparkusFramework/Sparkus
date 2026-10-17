@@ -172,7 +172,7 @@ export class SparkusApp {
     /** Initializes the app if needed and starts the HTTP server. */
     async listen(options: ListenOptions = {}): Promise<ListeningInfo> {
         if (this.server !== undefined) {
-            throw new SparkusError(ErrorCode.AlreadyListening, "listen() was called twice on the same app.");
+            throw new SparkusError(ErrorCode.AlreadyListening, "listen() called twice on the same app. Create one app per server.");
         }
         await this.init();
         const engine = await this.loadEngine();
@@ -247,8 +247,7 @@ export class SparkusApp {
         if (engine === undefined) {
             throw new SparkusError(
                 ErrorCode.NoEngine,
-                'No HTTP engine. Import createApp from "sparkus" (it picks Bun or Node), ' +
-                    'or pass engine: bunEngine() from "@sparkus/engine-bun" / nodeEngine() from "@sparkus/engine-node".',
+                'No HTTP engine. Import createApp from "sparkus" (it picks Bun or Node), or pass engine: nodeEngine().',
             );
         }
         return typeof engine === "function" ? await engine() : engine;

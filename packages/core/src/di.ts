@@ -58,9 +58,8 @@ export function inject<T>(token: Token<T>): T {
     if (active === undefined) {
         throw new SparkusError(
             ErrorCode.InjectOutsideConstruction,
-            `inject(${tokenName(token)}) was called outside of a Sparkus-managed construction. ` +
-                "Call it in a field initializer or in the constructor of a class Sparkus creates " +
-                "(controller, service, guard, interceptor), never at module level or inside a method.",
+            `inject(${tokenName(token)}) called outside a construction managed by Sparkus. ` +
+                "Call it in a field initializer or constructor, not at module level or in a method.",
         );
     }
     return active.get(token);
@@ -84,7 +83,7 @@ export class Container {
         if (this.instances.has(token)) {
             throw new SparkusError(
                 ErrorCode.ProviderAfterResolution,
-                `A provider for ${tokenName(token)} was registered after ${tokenName(token)} was already resolved. ` +
+                `Provider for ${tokenName(token)} registered after ${tokenName(token)} was resolved. ` +
                     "Register providers and overrides before init() or listen().",
             );
         }
@@ -104,8 +103,7 @@ export class Container {
             const reached = start > 0 ? `, reached from ${this.resolving.slice(0, start).map(tokenName).join(" -> ")}` : "";
             throw new SparkusError(
                 ErrorCode.DependencyCycle,
-                `Dependency cycle: ${cycle}${reached}. ` +
-                    "Break it by moving the logic both sides need into a third service.",
+                `Dependency cycle: ${cycle}${reached}. Move what both need into a third service.`,
             );
         }
 
@@ -140,8 +138,8 @@ export class Container {
             if (this.initialized && typeof (instance as Partial<OnInit>).onInit === "function") {
                 throw new SparkusError(
                     ErrorCode.LateLifecycle,
-                    `${tokenName(token)} has an onInit() hook but was first resolved after startup, so the hook would never run. ` +
-                        "Inject it in a controller, guard, interceptor or service, or resolve it with app.get() before listen().",
+                    `${tokenName(token)} has onInit() but was first resolved after startup, so it never ran. ` +
+                        "Inject it at startup, or resolve it with app.get() before listen().",
                 );
             }
         }
@@ -154,7 +152,7 @@ export class Container {
         if (token.factory !== undefined) return token.factory();
         throw new SparkusError(
             ErrorCode.NoProvider,
-            `No provider for token "${token.name}". Register one: providers: [{ provide: ${token.name}, useValue: ... }].`,
+            `No provider for token ${token.name}. Add providers: [{ provide: ${token.name}, useValue: ... }], or give the token a factory.`,
         );
     }
 

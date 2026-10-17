@@ -36,7 +36,7 @@ function route(method: HttpMethod) {
             if (context.static || context.private) {
                 throw new SparkusError(
                     ErrorCode.InvalidHandler,
-                    `${decorator} on "${String(context.name)}": route handlers must be public instance methods.`,
+                    `${decorator} on ${context.static ? "static" : "private"} method ${String(context.name)}: route handlers must be public instance methods.`,
                 );
             }
             (value as any)[ROUTE] = {
