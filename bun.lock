@@ -46,6 +46,9 @@
       "bin": {
         "sparkus": "./dist/main.js",
       },
+      "devDependencies": {
+        "sparkus": "workspace:*",
+      },
     },
     "packages/core": {
       "name": "@sparkus/core",

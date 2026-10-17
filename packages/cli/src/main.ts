@@ -1,4 +1,5 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
+import { CliError, describeError, loadApp } from "./app-loader.js";
 import { ArgsError, parseArgs, suggest, type FlagSpecs } from "./args.js";
 
 const VERSION = "1.0.0-alpha.0";
@@ -10,12 +11,58 @@ const GLOBAL_FLAGS: FlagSpecs = {
 };
 
 interface Command {
+    usage: string;
     summary: string;
     run(args: { json: boolean; positionals: string[] }): number | Promise<number>;
 }
 
 const COMMANDS: Record<string, Command> = {
+    check: {
+        usage: "check [entry]",
+        summary: "Load the app and wire it (DI, routes, schemas) without listening. Reports the first error.",
+        run: async ({ json, positionals }) => {
+            const { app, entry } = await loadApp(positionals[0], process.cwd());
+            try {
+                await app.init();
+            } catch (error) {
+                const { code, message } = describeError(error);
+                print(json, { ok: false, entry, error: { code, message } }, `✗ ${code ? `[${code}] ` : ""}${message}`);
+                return 1;
+            }
+            const count = app.routes.length;
+            print(json, { ok: true, entry, routes: count }, `✓ ${entry}: ${count} routes, ready.`);
+            return 0;
+        },
+    },
+    routes: {
+        usage: "routes [entry]",
+        summary: "List the routes: method, path, handler, status, body schema, guards, interceptors.",
+        run: async ({ json, positionals }) => {
+            const { app } = await loadApp(positionals[0], process.cwd());
+            await app.init();
+            const routes = app.routes;
+            if (json) {
+                print(true, { routes }, "");
+                return 0;
+            }
+            const width = Math.max(4, ...routes.map((r) => r.path.length));
+            const lines = routes.map((r) => {
+                const extras = [
+                    r.body ? "body" : "",
+                    r.guards ? `${r.guards} guard(s)` : "",
+                    r.interceptors ? `${r.interceptors} interceptor(s)` : "",
+                ]
+                    .filter(Boolean)
+                    .join(", ");
+                const status = r.status === 200 ? "" : ` -> ${r.status}`;
+                return `${r.method.padEnd(7)} ${r.path.padEnd(width)}  ${r.handler}${status}${extras ? `  (${extras})` : ""}`;
+            });
+            print(false, null, lines.join("\n"));
+            return 0;
+        },
+    },
     version: {
+        usage: "version",
         summary: "Print the CLI version.",
         run: ({ json }) => {
             print(json, { version: VERSION }, `sparkus ${VERSION}`);
@@ -23,6 +70,7 @@ const COMMANDS: Record<string, Command> = {
         },
     },
     help: {
+        usage: "help",
         summary: "Show this help.",
         run: ({ json }) => {
             printHelp(json);
@@ -37,7 +85,8 @@ function print(json: boolean, data: unknown, text: string): void {
 
 function printHelp(json: boolean): void {
     if (json) {
-        print(true, { commands: Object.entries(COMMANDS).map(([name, c]) => ({ name, summary: c.summary })), flags: GLOBAL_FLAGS }, "");
+        const commands = Object.entries(COMMANDS).map(([name, c]) => ({ name, usage: c.usage, summary: c.summary }));
+        print(true, { commands, flags: GLOBAL_FLAGS }, "");
         return;
     }
     const lines = [
@@ -46,12 +95,14 @@ function printHelp(json: boolean): void {
         "Usage: sparkus <command> [flags]",
         "",
         "Commands:",
-        ...Object.entries(COMMANDS).map(([name, c]) => `  ${name.padEnd(12)} ${c.summary}`),
+        ...Object.values(COMMANDS).map((c) => `  ${c.usage.padEnd(18)} ${c.summary}`),
         "",
         "Flags:",
         ...Object.entries(GLOBAL_FLAGS).map(
-            ([name, f]) => `  ${(f.short ? `-${f.short}, ` : "    ") + `--${name}`}`.padEnd(18) + ` ${f.description}`,
+            ([name, f]) => `  ${(f.short ? `-${f.short}, ` : "    ") + `--${name}`}`.padEnd(20) + ` ${f.description}`,
         ),
+        "",
+        "The entry is a module exporting the app (export default app), src/app.ts by default.",
     ];
     print(false, null, lines.join("\n"));
 }
@@ -71,10 +122,10 @@ export async function main(argv: readonly string[]): Promise<number> {
         }
         return await command.run({ json, positionals: positionals.slice(1) });
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (json) process.stdout.write(JSON.stringify({ error: { message } }) + "\n");
-        else process.stderr.write(`error: ${message}\n`);
-        return error instanceof ArgsError ? 2 : 1;
+        const { code, message } = describeError(error);
+        if (json) process.stdout.write(JSON.stringify({ ok: false, error: { code, message } }) + "\n");
+        else process.stderr.write(`error: ${code ? `[${code}] ` : ""}${message}\n`);
+        return error instanceof ArgsError || error instanceof CliError ? 2 : 1;
     }
 }
 

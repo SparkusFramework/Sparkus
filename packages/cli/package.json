@@ -15,6 +15,9 @@
         }
     },
     "files": ["dist"],
+    "devDependencies": {
+        "sparkus": "workspace:*"
+    },
     "scripts": {
         "build:native": "bun build --compile --bytecode --minify src/main.ts --outfile dist/sparkus"
     },

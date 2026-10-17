@@ -40,6 +40,12 @@ bun run check:deps
 ```
 
 ```bash
+bun packages/cli/src/main.ts check <entry> --json
+```
+
+Loads a module exporting an app and wires it without listening: `{ "ok": false, "error": { "code": "SPK1002", "message": "..." } }` on the first problem. `routes <entry> --json` lists the routes. Error codes: [docs/errors.md](./docs/errors.md).
+
+```bash
 bun run bench
 ```
 
