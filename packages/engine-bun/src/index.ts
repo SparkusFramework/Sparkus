@@ -80,7 +80,10 @@ export function bunEngine(options: BunEngineOptions = {}): Engine {
                 maxRequestBodySize: Math.max(runtime.bodyLimit * 2, runtime.bodyLimit + 64 * 1024),
                 development: false,
                 routes: table as any,
-                fetch: (request, server) => waitForHandler(fallback(request), request, server, idle),
+                fetch: (request, server) => {
+                    const out = fallback(request);
+                    return out instanceof Promise ? waitForHandler(out, request, server, idle) : out;
+                },
                 error: (error) => errorResponse(runtime.renderError(error)),
             });
 

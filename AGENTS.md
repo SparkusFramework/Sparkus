@@ -1,6 +1,6 @@
 # Working on Sparkus
 
-Instructions for anyone, human or agent, changing this repository. Read [ROADMAP.md](./ROADMAP.md) first: its decisions table (D1 to D11) is binding.
+Instructions for anyone, human or agent, changing this repository. Read [ROADMAP.md](./ROADMAP.md) first: its decisions table (D1 to D13) is binding.
 
 ## The mission
 
@@ -12,7 +12,7 @@ Instructions for anyone, human or agent, changing this repository. Read [ROADMAP
 
 | Path | Contents |
 |---|---|
-| `packages/core` | Decorators, DI (`di.ts`), route compilation (`compile.ts`), pipeline (`pipeline.ts`), router (`router.ts`), errors, web context (`web.ts`), app (`app.ts`). Two entry points: `index.ts` (public API for applications, nothing else) and `engine.ts` (SPI for engines: runtime, contexts, router, error rendering). |
+| `packages/core` | Decorators, DI (`di.ts`), route compilation (`compile.ts`), pipeline (`pipeline.ts`), router (`router.ts`), errors, web context (`web.ts`), app (`app.ts`), config (`config.ts`), logger (`log.ts`), request observer: CORS, security headers, request ids, request logs, telemetry (`observe.ts`), health probes (`health.ts`). Two entry points: `index.ts` (public API for applications, nothing else) and `engine.ts` (SPI for engines: runtime, contexts, router, error rendering). |
 | `packages/engine-bun` | `Bun.serve` native routes; misses fall back to the core router. |
 | `packages/engine-node` | `node:http` + core router. |
 | `packages/sparkus` | Public package: re-exports core, picks the engine. |
@@ -52,6 +52,7 @@ bun run bench
 ## Rules
 
 - **Behavior lives in the conformance suite.** A change in what a request returns gets a case in `tests/conformance/test/conformance.test.ts`, which runs on all four targets. Engines must never differ.
+- **Options cost nothing when off (D13).** A production feature is an app option, off by default; with every option off, `runtime.observer` is null and engines keep their plain path. Measure the cost of a feature when on (`bench/compare.ts`), not only the default path.
 - **Hot path discipline.** Anything per request in `engine-*/src`, `core/src/web.ts`, `router.ts` or `pipeline.ts`: no closures or allocations that can be hoisted to startup, no `await` on synchronous values, no try/catch-free throw paths for expected cases, monomorphic objects (same fields, same order, set in the constructor).
 - **Prove performance claims.** Before/after numbers from `bench/` (same machine, same session, `--runs` ≥ 3 for close calls), plus CPU per request. A micro-benchmark alone is not proof. Only one benchmark may run at a time on a machine: `bench/run.ts` takes a machine-wide lock, do not bypass it.
 - **Errors.** Startup errors are `SparkusError` with a code from `ErrorCode` in `core/src/errors.ts`, a message that names the culprit and the fix. Request errors are `HttpError`, rendered as problem+json. Never send a stack trace.

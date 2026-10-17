@@ -140,7 +140,7 @@ export class SparkusApp {
     private ready: Promise<void> | undefined;
     private server: EngineServer | undefined;
     private closing: Promise<void> | undefined;
-    private handleFetch: ((request: Request) => Promise<Response>) | undefined;
+    private handleFetch: ((request: Request) => Response | Promise<Response>) | undefined;
     private removeSignalHandlers: (() => void) | undefined;
     private shutdownTimeout = DEFAULT_SHUTDOWN_TIMEOUT;
     private shutdownDelay = 0;
@@ -271,7 +271,11 @@ export class SparkusApp {
         if (this.handleFetch === undefined || this.runtime === undefined) {
             return Promise.reject(this.notInitialized("fetch()"));
         }
-        return this.handleFetch(request);
+        try {
+            return Promise.resolve(this.handleFetch(request));
+        } catch (error) {
+            return Promise.reject(error);
+        }
     };
 
     /** Initializes the app if needed and starts the HTTP server. */

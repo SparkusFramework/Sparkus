@@ -343,17 +343,21 @@ export function unroutedResponse(request: Request, method: string, path: string,
  * `app.fetch`, the Bun engine's fallback for anything its native router
  * leaves out (404, 405, preflight, backtracking), and the in-memory test client.
  */
-export function createFetchHandler(runtime: AppRuntime): (request: Request) => Promise<Response> {
+export function createFetchHandler(runtime: AppRuntime): (request: Request) => Response | Promise<Response> {
     const router = new Router<WebHandler>();
     for (const route of runtime.routes) router.add(route.method, route.path, createWebHandler(route, runtime));
+    const bodiless = (response: Response) => new Response(null, response);
 
-    return async (request) => {
+    // Synchronous when the answer is (404, 405, preflight, sync handlers): no promise to settle,
+    // and the Bun engine knows it has no idle timer to suspend.
+    return (request) => {
         const method = request.method;
         const path = pathOf(request.url);
         const match = router.find(method, path);
         if (match === null) return unroutedResponse(request, method, path, router.allowed(path), runtime);
-        const response = await match.handler(request, match.params);
-        return method === "HEAD" ? new Response(null, response) : response;
+        const response = match.handler(request, match.params);
+        if (method !== "HEAD") return response;
+        return response instanceof Promise ? response.then(bodiless) : bodiless(response);
     };
 }
 
