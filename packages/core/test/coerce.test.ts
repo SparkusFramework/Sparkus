@@ -46,13 +46,13 @@ describe("compileCoercer", () => {
         expect(issue(() => params({ id: "4x2", slug: "a" }))).toEqual({
             status: 400,
             code: "SPK2004",
-            detail: "Invalid path parameter params.id: must be an integer.",
+            detail: 'Invalid path parameter "id": must be an integer.',
             issues: [{ path: "params.id", message: "must be an integer" }],
         });
         expect(issue(() => params({ id: "0", slug: "a" })).issues).toEqual([{ path: "params.id", message: "must be >= 1" }]);
         expect(issue(() => params({ id: "99999999999999999999", slug: "a" })).issues[0]!.message).toBe("must be a safe integer");
         expect(issue(() => params({ id: "1", slug: "toolong" })).issues[0]!.message).toBe("must have at most 5 characters");
-        expect(issue(() => query({ page: "101" })).detail).toBe("Invalid query parameter query.page: must be <= 100.");
+        expect(issue(() => query({ page: "101" })).detail).toBe('Invalid query parameter "page": must be <= 100.');
         expect(issue(() => query({ ratio: "" })).issues[0]!.message).toBe("must be a number");
         expect(issue(() => query({ ratio: "1,5" })).issues[0]!.message).toBe("must be a number");
         expect(issue(() => query({ draft: "yes" })).issues[0]!.message).toBe('must be "true", "false", "1" or "0"');
@@ -65,19 +65,22 @@ describe("checkSchema", () => {
     test("params must match the path exactly", () => {
         expect(() => checkSchema(t.object({ id: t.integer() }), "params", where, ["id"])).not.toThrow();
         expect(() => checkSchema(t.object({}), "params", where, ["id"])).toThrow(
-            '[SPK1017] GET /users/:id (Users.get): params schema is missing "id".',
+            "[SPK1017] GET /users/:id (Users.get): params schema has no fields but the path has :id. Use the same names in both.",
         );
         expect(() => checkSchema(t.object({ id: t.integer(), x: t.string() }), "params", where, ["id"])).toThrow(
-            'has "x", which is not a parameter of the path',
+            "params schema has fields id, x but the path has :id.",
+        );
+        expect(() => checkSchema(t.object({ id: t.integer() }), "params", where, ["userId"])).toThrow(
+            "params schema has fields id but the path has :userId. Use the same names in both.",
         );
         expect(() => checkSchema(t.object({ id: t.optional(t.integer()) }), "params", where, ["id"])).toThrow(
-            "path parameters are always present",
+            'field "id" is optional, but path parameters are always present. Remove t.optional().',
         );
     });
 
     test("only flat scalar fields", () => {
         expect(() => checkSchema(t.object({ tags: t.optional(t.array(t.string())) }), "query", where, [])).toThrow(
-            'field "tags" is t.array(); only string, integer, number and boolean are supported',
+            'field "tags" is t.array(); use t.string(), t.integer(), t.number() or t.boolean()',
         );
         expect(() => checkSchema(t.string(), "query", where, [])).toThrow("must be t.object({ ... })");
     });

@@ -177,8 +177,8 @@ export class Container {
             const path = this.resolving.length > 1 ? ` (${this.resolving.map(tokenName).join(" -> ")})` : "";
             throw new SparkusError(
                 ErrorCode.ConstructionFailed,
-                `${type.name || "<anonymous>"} has constructor parameters${path}, but Sparkus constructs classes without ` +
-                    "arguments. Declare dependencies as fields instead: private readonly users = inject(UserService).",
+                `${tokenName(type)} has constructor parameters${path}, but Sparkus constructs classes without arguments. ` +
+                    "Declare dependencies as fields instead: private readonly users = inject(UserService).",
             );
         }
         return new type();

@@ -169,7 +169,7 @@ for (const [label, start] of targets) {
                 const res = await target.request("/typed/abc");
                 expectProblem(res, 400, {
                     code: "SPK2004",
-                    detail: "Invalid path parameter params.id: must be an integer.",
+                    detail: 'Invalid path parameter "id": must be an integer.',
                     issues: [{ path: "params.id", message: "must be an integer" }],
                 });
                 expectProblem(await target.request("/typed/0"), 400, { issues: [{ path: "params.id", message: "must be >= 1" }] });
@@ -177,7 +177,7 @@ for (const [label, start] of targets) {
 
             test("an invalid query parameter is 400 naming it", async () => {
                 expectProblem(await target.request("/typed/5?page=two"), 400, {
-                    detail: "Invalid query parameter query.page: must be an integer.",
+                    detail: 'Invalid query parameter "page": must be an integer.',
                 });
                 expectProblem(await target.request("/typed/5?draft=maybe"), 400, {
                     issues: [{ path: "query.draft", message: 'must be "true", "false", "1" or "0"' }],

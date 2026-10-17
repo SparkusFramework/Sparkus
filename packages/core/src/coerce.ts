@@ -16,7 +16,10 @@ export type Source = "params" | "query";
 const SCALARS = new Set(["string", "integer", "number", "boolean"]);
 
 export function invalidRequest(source: Source, issue: Issue): HttpError {
-    return new HttpError(400, `Invalid ${source === "params" ? "path parameter" : "query parameter"} ${issue.path}: ${issue.message}.`, {
+    // issue.path is "query.page": the detail names the parameter as the client wrote it.
+    const name = issue.path.slice(source.length + 1);
+    const kind = source === "params" ? "path" : "query";
+    return new HttpError(400, `Invalid ${kind} parameter "${name}": ${issue.message}.`, {
         code: ErrorCode.ValidationFailed,
         extensions: { issues: [issue] },
     });
@@ -33,20 +36,26 @@ function invalidSchema(where: string, source: Source, reason: string): SparkusEr
  */
 export function checkSchema(schema: Schema, source: Source, where: string, pathParams: readonly string[]): void {
     if (schema.kind !== "object" || schema.shape === undefined) {
-        throw invalidSchema(where, source, "must be t.object({ ... })");
+        const fields = source === "params" ? " with one field per path parameter" : "";
+        throw invalidSchema(where, source, `must be t.object({ ... })${fields}`);
     }
     for (const [key, field] of Object.entries(schema.shape)) {
         if (!SCALARS.has(field.kind)) {
-            throw invalidSchema(where, source, `field "${key}" is t.${field.kind}(); only string, integer, number and boolean are supported`);
+            const use = "use t.string(), t.integer(), t.number() or t.boolean()";
+            throw invalidSchema(where, source, `field "${key}" is t.${field.kind}(); ${use}`);
         }
-        if (source === "params") {
-            if (!pathParams.includes(key)) throw invalidSchema(where, source, `has "${key}", which is not a parameter of the path`);
-            if (field.optional) throw invalidSchema(where, source, `field "${key}" is optional; path parameters are always present`);
+        if (source === "params" && field.optional) {
+            const reason = `field "${key}" is optional, but path parameters are always present`;
+            throw invalidSchema(where, source, `${reason}. Remove t.optional()`);
         }
     }
     if (source === "params") {
-        const missing = pathParams.filter((name) => !(name in schema.shape!));
-        if (missing.length > 0) throw invalidSchema(where, source, `is missing ${missing.map((m) => `"${m}"`).join(", ")}`);
+        const fields = Object.keys(schema.shape);
+        if (fields.length !== pathParams.length || fields.some((field) => !pathParams.includes(field))) {
+            const has = fields.length === 0 ? "no fields" : `fields ${fields.join(", ")}`;
+            const path = pathParams.length === 0 ? "no parameters" : pathParams.map((name) => `:${name}`).join(", ");
+            throw invalidSchema(where, source, `has ${has} but the path has ${path}. Use the same names in both`);
+        }
     }
 }
 

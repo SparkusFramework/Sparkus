@@ -64,7 +64,10 @@ export function parsePath(path: string, where: string): string[] {
     if (path === "/") return names;
     for (const segment of path.split("/").slice(1)) {
         const invalid = (reason: string) =>
-            new SparkusError(ErrorCode.InvalidRoutePath, `Route path "${path}" (${where}) ${reason}.`);
+            new SparkusError(
+                ErrorCode.InvalidRoutePath,
+                `Route path "${path}" (${where}) ${reason}. Use static segments and :name parameters.`,
+            );
         if (segment.length === 0) throw invalid("has an empty segment (double slash)");
         if (segment.startsWith(":")) {
             const name = segment.slice(1);
@@ -128,7 +131,10 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
             const id = `${route.method} ${path}`;
             const previous = declared.get(id);
             if (previous !== undefined) {
-                throw new SparkusError(ErrorCode.DuplicateRoute, `Route ${id} is declared twice: ${previous} and ${handlerName}.`);
+                throw new SparkusError(
+                    ErrorCode.DuplicateRoute,
+                    `Route ${id} is declared twice: ${previous} and ${handlerName}. Remove one, or change its method or path.`,
+                );
             }
             declared.set(id, handlerName);
 

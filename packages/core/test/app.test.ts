@@ -38,7 +38,7 @@ describe("startup checks", () => {
             b() {}
         }
         expect(createApp({ controllers: [One, Two] }).init()).rejects.toThrow(
-            "[SPK1003] Route GET /x is declared twice: One.a and Two.b.",
+            "[SPK1003] Route GET /x is declared twice: One.a and Two.b. Remove one, or change its method or path.",
         );
     });
 
