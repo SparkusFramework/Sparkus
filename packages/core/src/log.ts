@@ -27,7 +27,10 @@ export interface LoggerOptions {
     format?: "json" | "pretty";
     /** One line per request: method, path, status, duration, request id. Default: false. */
     requests?: boolean;
-    /** Receives each line (without "\n"). Default: stdout, buffered and flushed once per event loop turn. */
+    /**
+     * Receives each line (without "\n"). Default: stdout (stderr when SPARKUS_LOG_STDERR=1, as the
+     * CLI sets it), buffered and flushed once per event loop turn.
+     */
     write?: (line: string) => void;
 }
 
@@ -134,9 +137,10 @@ class StdoutSink {
         if (this.buffer.length === 0) return;
         const text = this.buffer;
         this.buffer = "";
-        const stdout = globalThis.process?.stdout;
-        if (stdout === undefined) console.log(text.slice(0, -1));
-        else stdout.write(text);
+        // The CLI sets SPARKUS_LOG_STDERR: its own output on stdout (JSON, OpenAPI) stays parseable.
+        const stream = env("SPARKUS_LOG_STDERR") === "1" ? globalThis.process?.stderr : globalThis.process?.stdout;
+        if (stream === undefined) console.log(text.slice(0, -1));
+        else stream.write(text);
     };
 }
 

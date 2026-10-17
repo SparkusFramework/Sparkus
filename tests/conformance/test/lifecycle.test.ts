@@ -62,5 +62,21 @@ describe.skipIf(process.platform === "win32")("SIGTERM on a real process", () =>
             await proc.exited;
             expect(proc.signalCode ?? proc.exitCode).toBe("SIGTERM");
         });
+
+        test(`${label}: shutdownDelay keeps serving with readiness failing, then exits`, async () => {
+            const { proc, base } = await spawnServer(runtime, { FIXTURE: "production", SHUTDOWN_DELAY: "400" });
+            expect((await fetch(base + "/ready")).status).toBe(200);
+            proc.kill("SIGTERM");
+            await Bun.sleep(100);
+
+            const ready = await fetch(base + "/ready");
+            expect(ready.status).toBe(503);
+            expect(((await ready.json()) as { detail: string }).detail).toBe("The app is shutting down.");
+            expect((await fetch(base + "/health")).status).toBe(200);
+            expect((await fetch(base + "/items/1")).status).toBe(200);
+
+            await proc.exited;
+            expect(proc.signalCode ?? proc.exitCode).toBe("SIGTERM");
+        });
     }
 });

@@ -7,8 +7,14 @@ import type { Ctx, RequestContext } from "./context.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import type { Logger } from "./log.js";
 
-/** Attribute values, as OpenTelemetry defines them. */
-export type AttributeValue = string | number | boolean | ReadonlyArray<string> | ReadonlyArray<number> | ReadonlyArray<boolean>;
+/** Attribute values, exactly as OpenTelemetry defines them (so its types and these are interchangeable). */
+export type AttributeValue =
+    | string
+    | number
+    | boolean
+    | Array<null | undefined | string>
+    | Array<null | undefined | number>
+    | Array<null | undefined | boolean>;
 export type Attributes = Record<string, AttributeValue | undefined>;
 
 /**
@@ -47,16 +53,17 @@ export interface Meter {
 export interface TelemetryOptions {
     tracer?: Tracer;
     meter?: Meter;
+    // Method signatures: their parameters accept OpenTelemetry's own types (`span: OtelSpan`).
     /**
      * Parent context of the server span, usually from the `traceparent` header:
-     * `(ctx) => propagation.extract(context.active(), ctx, { get: (c, key) => c.header(key), keys: () => [] })`.
+     * `extract: (ctx) => propagation.extract(ROOT_CONTEXT, { traceparent: ctx.header("traceparent") })`.
      */
-    extract?: (ctx: Ctx<any>) => unknown;
+    extract?(ctx: Ctx<any>): unknown;
     /**
      * Runs the request inside the span's context, so spans your code starts are its children:
-     * `(span, run) => context.with(trace.setSpan(context.active(), span as OtelSpan), run)`.
+     * `activate: (span: OtelSpan, run) => context.with(trace.setSpan(context.active(), span), run)`.
      */
-    activate?: <T>(span: Span, run: () => T) => T;
+    activate?<T>(span: Span, run: () => T): T;
 }
 
 export interface CorsOptions {
@@ -191,7 +198,9 @@ export class Observer {
         if (cors?.origin === "*" && this.exposed !== null) base["access-control-expose-headers"] = this.exposed;
         this.base = Object.keys(base).length === 0 ? null : Object.freeze(base);
         this.echo = options.echoRequestId;
-        this.http = options.requests ? options.log.child("http") : null;
+        const http = options.log.child("http");
+        // Levels are fixed per module: a disabled request log costs nothing per request.
+        this.http = options.requests && http.enabled("info") ? http : null;
 
         const telemetry = options.telemetry ?? {};
         this.tracer = telemetry.tracer;
@@ -220,8 +229,7 @@ export class Observer {
 
     /** Called once the route is known (undefined: no route). Sets the response headers to start with. */
     start(ctx: RequestContext, route: string | undefined): void {
-        const extras = ctx.extras;
-        if (this.timed) extras.startTime = performance.now();
+        if (this.timed) ctx.extras.startTime = performance.now();
         let headers: Record<string, string> | null = this.base === null ? null : { ...this.base };
         if (this.allowOrigin !== null) {
             const origin = ctx.header("origin");
@@ -242,7 +250,7 @@ export class Observer {
             const agent = ctx.header("user-agent");
             if (agent !== undefined) attributes["user_agent.original"] = agent;
             const name = route === undefined ? method : `${method} ${route}`;
-            extras.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
+            ctx.extras.span = this.tracer.startSpan(name, { kind: SPAN_KIND_SERVER, attributes }, this.extract?.(ctx));
         }
     }
 
@@ -265,14 +273,18 @@ export class Observer {
 
     /** Called with the final status: request log line, duration metric, end of the span. */
     finish(ctx: RequestContext, status: number, route: string | undefined): void {
+        // Headers only (security, CORS, request id): nothing to do once the response is ready.
+        if (!this.timed && this.tracer === undefined) return;
         const extras = ctx.extras;
         if (this.timed) {
             const ms = performance.now() - extras.startTime;
             if (this.http !== null) {
-                this.http.info(`${ctx.method} ${ctx.path} ${status}`, {
+                const method = ctx.method;
+                const path = ctx.path;
+                this.http.info(`${method} ${path} ${status}`, {
                     reqId: ctx.requestId,
-                    method: ctx.method,
-                    path: ctx.path,
+                    method,
+                    path,
                     route,
                     status,
                     ms: Math.round(ms * 100) / 100,

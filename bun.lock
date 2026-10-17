@@ -102,6 +102,8 @@
       },
       "devDependencies": {
         "@opentelemetry/api": "^1.9.0",
+        "@opentelemetry/context-async-hooks": "^2.0.0",
+        "@opentelemetry/core": "^2.0.0",
         "@opentelemetry/sdk-metrics": "^2.0.0",
         "@opentelemetry/sdk-trace-base": "^2.0.0",
         "zod": "^4.0.0",
@@ -152,6 +154,8 @@
     "@nestjs/platform-fastify": ["@nestjs/platform-fastify@11.2.7", "", { "dependencies": { "@fastify/cors": "11.3.0", "@fastify/formbody": "8.0.2", "@fastify/middie": "9.3.4", "fast-querystring": "1.1.2", "fastify": "5.11.3", "find-my-way": "9.7.0", "light-my-request": "6.6.0", "path-to-regexp": "8.4.2", "tslib": "2.8.1" }, "peerDependencies": { "@fastify/static": "^10.1.2", "@fastify/view": "^10.0.0 || ^11.0.0 || ^12.0.0", "@nestjs/common": "^11.0.0", "@nestjs/core": "^11.0.0" }, "optionalPeers": ["@fastify/static", "@fastify/view"] }, "sha512-MdkxncTAQiuw5F9KJKUI1qgBRRGl+WAC+66NlAR63iFXVwH6OzVMlcTXdAB4luelUscpoEPMhB6djrAJ7Jc+Sw=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
+
+    "@opentelemetry/context-async-hooks": ["@opentelemetry/context-async-hooks@2.12.0", "", { "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-iK/1nD7mmZVkuYjVjkdFBiCvzntJdFny1S3CYbUYyOq7V5enL6XX+gJ7eh965L1LnS11VA8mQ7Ej/ck04SB0MQ=="],
 
     "@opentelemetry/core": ["@opentelemetry/core@2.12.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-1HsSAuvT4/my0QrXWsyXFdWjKaPeCHsismKZgEEIb8NK13LP6DrMRlsUbvD/0F9mDWK3xDom9AMv3IscxgOnOQ=="],
 
