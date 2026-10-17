@@ -91,7 +91,12 @@ function withHeaders(type: string, headers: Record<string, string> | null): Reco
 }
 
 /** Turns a handler's return value into a Response. */
-export function toResponse(value: unknown, ctx: WebContext, init: ResponseInit, routeStatus: number): Response {
+export function toResponse(
+    value: unknown,
+    ctx: WebContext,
+    init: ResponseInit | undefined,
+    routeStatus: number,
+): Response {
     const headers = ctx.responseHeaders;
     const status = ctx.status;
 
@@ -123,7 +128,8 @@ export type WebHandler = (request: Request, params: Readonly<Record<string, stri
 /** Request -> Response handler for one route. Errors never escape: they become problem+json responses. */
 export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): WebHandler {
     const { run, status } = route;
-    const init: ResponseInit = { status };
+    // Bun charges ~80 ns for reading any init object, even { status: 200 }: pass none when the default fits.
+    const init: ResponseInit | undefined = status === 200 ? undefined : { status };
 
     return (request, params) => {
         const ctx = new WebContext(request, params, status);
