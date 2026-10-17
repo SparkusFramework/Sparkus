@@ -85,7 +85,14 @@ Mesuré sur la machine de dev (Ryzen 7 7800X3D, 8 cœurs / 16 threads, plan « H
 
 Conclusion : un serveur Node ou Bun est mono-thread et sature son cœur (CPU ≈ 100 – 110 %). Quand l'ordonnanceur place sur le **frère SMT** de ce cœur un thread chargé (un worker autocannon, un autre serveur, un `tsc` d'une session voisine…), le coût CPU de chaque requête augmente de 17 à 51 %, alors que le CPU consommé reste à 100 % : c'est exactement la signature des anciennes sessions (CPU constant à 110 %, débit −40 %, y compris entre deux scénarios d'un même process, quand autocannon redémarre et que ses workers atterrissent ailleurs). Ce n'est pas une dérive dans le temps : c'est un tirage au sort du placement, à chaque process et à chaque lancement d'autocannon.
 
-Ce qui reste une hypothèse : que **chaque** chute des anciennes sessions vienne d'un voisin SMT (le placement des threads n'était pas tracé). Le mécanisme et l'amplitude sont prouvés ; la validation A/A ci-dessous montre l'effet de l'épinglage sur l'étendue.
+Ce qui reste une hypothèse : que **chaque** chute des anciennes sessions vienne d'un voisin SMT (le placement des threads n'était pas tracé). Le mécanisme et l'amplitude sont prouvés, pas l'attribution de chaque chute passée.
+
+### Validation de la méthode (machine de dev, 17/10/2026)
+
+- **Test A/A** : `--targets sparkus-node --scenarios hello,params-query --baseline HEAD --rounds 5 --duration 5` (le même code des deux côtés) donne **≈** sur les deux scénarios, débit et efficacité CPU : pas de faux positif. Étendue des ratios appariés : −3,4 % à +9,5 %.
+- **Résolution pratique** : avec 5 rounds de 5 s, une mesure isolée bouge de ±5 % ; un gain de 2 – 3 % ne sera « prouvé » que s'il est régulier. Pour un écart plus fin : plus de rounds (le verdict exige alors que **tous** soient du même côté, ce qui reste strict), pas des mesures plus longues.
+- **Épinglé vs non épinglé** (node-raw, sparkus-node, fastify, 4 rounds chacun, même session) : étendues comparables (2 – 7 %) ; la machine était calme (CPU des autres process : médiane 14 – 31 % d'un cœur) et aucun « mode lent » ne s'est produit sans épinglage. L'épinglage supprime le mécanisme prouvé, il n'a pas de coût mesurable (node-raw 63,3k épinglé, 63,1k non épinglé).
+- Le « CPU des autres process » est une estimation (charge totale échantillonnée chaque seconde moins les compteurs des process du bench) : ±70 % d'un cœur, d'où des valeurs parfois négatives et le seuil « bruité » à 150 %.
 
 Remèdes, dans l'ordre : épinglage (par défaut), rounds entrelacés et ratios appariés, contexte machine sur chaque mesure, et **une machine calme** : pas de build, de tests ou de jeu pendant un bench (l'épinglage ne peut pas empêcher un autre process d'utiliser le frère SMT du serveur).
 
