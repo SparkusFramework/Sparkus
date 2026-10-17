@@ -133,7 +133,35 @@ Décomposition sous Bun avant optimisation (`hello`) : logs −15,1 %, headers d
 | Express | 53 % | 48 % | 43 % |
 | NestJS (Express) | 41 % | 36 % | 28 % |
 
-Critère de la phase 0 toujours tenu après la phase 3 : Sparkus/Bun à moins de 10 % de `Bun.serve` et devant Elysia, Sparkus/Node devant Fastify. Avec toutes ses options de production, Sparkus/Node reste au niveau de Fastify sans aucune option sur `post-validate` et devant NestJS-Fastify.
+Contre-mesure en 5 rounds, ratios appariés (`bench/compare.ts`, aucune mesure bruitée, [rapport](bench/reference/2026-10-17-phase3-comparison-proof.md)) :
+
+| A / B | `hello` | `params-query` | `post-validate` |
+|---|---:|---:|---:|
+| Sparkus/Bun / Elysia | +0,5 % ≈ | +0,6 % ≈ | **+5,3 % prouvé** |
+| Sparkus/Node / Fastify | **+15,6 % prouvé** | **+16,6 % prouvé** | **+25,8 % prouvé** |
+| Sparkus/Node, toutes options de prod / Fastify sans option | −6,4 % prouvé | −6,9 % prouvé | −0,7 % ≈ |
+| Sparkus/Node, toutes options de prod / NestJS-Fastify | −5,6 % prouvé | +6,1 % prouvé | +103,6 % prouvé |
+
+Critère de la phase 0 après la phase 3 : Sparkus/Bun à moins de 10 % de `Bun.serve` (94 à 99 %) ; **à égalité avec Elysia** sur `hello` et `params-query`, devant sur `post-validate` (le critère « devant Elysia » n'est donc prouvé que là) ; Sparkus/Node nettement devant Fastify. Avec toutes ses options de production, Sparkus/Node perd 6 à 7 % contre Fastify *sans aucune option*, et reste à son niveau sur `post-validate`.
+
+**Conformité aux décisions.** La phase 3 relue décision par décision :
+
+| # | Tenu ? | Comment |
+|---|---|---|
+| D1 | oui | Toutes les options marchent sur Bun et Node ; Bun reste le moteur par défaut et le plus rapide ; `requestContext` ne coûte presque rien sous Bun. |
+| D2 | oui | Les fonctions de prod vivent dans le cœur (`Observer`) ; les moteurs choisissent seulement une variante « nue » ou « observée » au démarrage. L'interface des moteurs ne gagne que `idleTimeout`. |
+| D3 | oui | Aucun nouveau décorateur : tout passe par des options typées. |
+| D4 | oui | `inject(Logger)`, `inject(AppConfig)` ; les `HealthCheck` sont trouvés dans le conteneur, sans token. |
+| D5 | oui | `ctx.requestId`, `ctx.log`, `ctx.signal` typés ; `t.enum` et `default` inférés dans `Ctx<typeof Route>`. |
+| D6 | oui | Le même `t` décrit la config ; `enum` et `default` vont dans l'OpenAPI et le client généré. |
+| D8 | **non** | Toutes les mesures de la phase 3 sont faites sous Windows. Les chiffres Linux restent à produire. |
+| D9 | oui | `check:deps` passe. OpenTelemetry est accepté par types structurels (SDK seulement en dev). `node:async_hooks` est un module intégré, chargé à la demande. |
+| D10 | oui | Une fixture « production » jouée sur les 4 cibles. Elle a révélé un écart réel (Bun coupait les handlers lents), corrigé. |
+| D11 | oui | Outillage inchangé (`bun check`, `bun build`). |
+| D12 | oui | Inchangé : les défauts remplissent le body filtré, et la projection de la réponse reste la même. |
+| D13 | oui | Avec toutes les options éteintes, l'app n'a pas d'observateur. A/B contre `main` : ≈ sur 9 cas sur 10 ; le dixième (−1 %) paie la correction D10. |
+
+Mission « facile pour les agents » : 4 nouveaux codes d'erreur qui disent quoi faire (SPK1018 liste toutes les variables, SPK1019 donne l'origine corrigée), les clés d'options de route inconnues sont refusées avec une suggestion, et le template `init` produit une app de prod testée.
 
 Reporté :
 
