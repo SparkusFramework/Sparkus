@@ -75,7 +75,7 @@ Reporté à la phase suivante :
 - ~~Champs inconnus du body~~ : retirés (D12, phase 2).
 - Comparaison finale v1 intégrée contre `bun-raw`, `node-raw`, Elysia et Fastify ; chiffres Linux (D8).
 
-## Phase 2 — Schémas et contrat
+## Phase 2 — Schémas et contrat *(terminée)*
 
 - [x] Un schéma par entrée : `params` et `query` typés, convertis et validés (400 qui nomme la valeur), `body` validé, `response` qui type le retour du handler à la compilation. Schémas vérifiés au démarrage (`SPK1017`).
 - [x] OpenAPI 3.1 généré depuis les schémas (`app.openapi()`, `sparkus openapi`).
