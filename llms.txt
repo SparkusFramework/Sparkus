@@ -1,0 +1,113 @@
+# Sparkus
+
+> TypeScript backend framework: decorators and dependency injection, compiled at startup, served by Bun.serve (under Bun) or node:http (under Node). Zero runtime dependencies. Every error has a stable code (SPKxxxx).
+
+Install `sparkus`; tests use `@sparkus/testing`; the `sparkus` command comes from `@sparkus/cli`.
+
+## Complete example
+
+```ts
+import { Controller, Get, Post, HttpError, createApp, inject, t, type Ctx } from "sparkus";
+
+class UserService {
+    find(id: number) { return id === 1 ? { id, name: "Ada" } : undefined; }
+}
+
+const GetUser = { params: t.object({ id: t.integer({ min: 1 }) }) };
+const CreateUser = { body: t.object({ name: t.string({ min: 1 }) }), status: 201 };
+
+@Controller("/users")
+export class UserController {
+    private readonly users = inject(UserService);
+
+    @Get("/:id", GetUser)
+    get(ctx: Ctx<typeof GetUser>) {               // ctx.params.id: number
+        const user = this.users.find(ctx.params.id);
+        if (!user) throw HttpError.notFound(`User ${ctx.params.id} not found.`, { code: "USER_NOT_FOUND" });
+        return user;                               // objects are sent as JSON
+    }
+
+    @Post("", CreateUser)
+    create(ctx: Ctx<typeof CreateUser>) {          // ctx.body: { name: string }, already validated
+        return { id: 2, name: ctx.body.name };
+    }
+}
+
+export default createApp({ controllers: [UserController] });   // src/app.ts
+// src/main.ts: await app.listen();   (port: PORT env or 3000)
+```
+
+## Routes
+
+- `@Controller(prefix)` on a class; it must be listed in `createApp({ controllers })`.
+- `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Head`, `@Options` on public instance methods: `(path, options?)`.
+- Paths: static segments and `:name` parameters. Case-sensitive; a trailing slash is a different path; static segments win over parameters. HEAD falls back to GET. Unknown path: 404 (SPK2001). Known path, other method: 405 with `Allow` (SPK2002).
+- Options: `{ params?, query?, body?, status? }`. Declare them as a `const` and type the handler with `Ctx<typeof Options>`.
+
+## Schemas (`t`)
+
+`t.string({ min, max })`, `t.integer({ min, max })`, `t.number({ min, max })`, `t.boolean()`, `t.object({ ... })`, `t.array(item, { min, max })`, `t.optional(schema)`.
+
+- `body`: any schema. JSON only (`content-type: application/json`, else 415 SPK2005), 1 MiB by default (413 SPK2006). Invalid: 400 SPK2004 with `issues: [{ path: "$.age", message }]`.
+- `params`: flat `t.object` naming exactly the path's parameters, all required. Values converted (integer, number, boolean "true"/"false"/"1"/"0").
+- `query`: flat `t.object`, fields usually `t.optional(...)`; unknown keys dropped. Invalid params/query: 400 SPK2004, `issues[0].path` is `params.id` or `query.page`.
+- Without a schema: `ctx.params` / `ctx.query` are strings.
+
+## Ctx (handlers, guards, interceptors)
+
+`method`, `path`, `params`, `query`, `body`, `header(name)`, `status` (settable), `setHeader(name, value)`, `state` (per-request object shared with guards and interceptors).
+
+Return value: object/array/number/null → JSON; string → text/plain; `Uint8Array` → octet-stream; `undefined` → 204 (or the route status if not 200); a `Response` is sent as is. Handlers may be async.
+
+## Dependency injection
+
+- Services are plain classes without constructor arguments. Get one with `private readonly x = inject(XService)` in a field initializer or constructor. Singletons, created at startup.
+- Values: `export const DB_URL = token<string>("DB_URL")`, then `createApp({ providers: [{ provide: DB_URL, useValue: "..." }] })`. Providers: `useValue`, `useClass`, `useFactory` (may call `inject`).
+- Lifecycle: `onInit()` (dependencies first, may be async, awaited before listening) and `onShutdown()` (reverse order).
+- `app.get(Token)` resolves a singleton.
+
+## Guards and interceptors
+
+```ts
+const isAdmin = (ctx: Ctx) => ctx.header("authorization") === "Bearer admin";   // true lets the request through
+class AuthGuard implements Guard { users = inject(UserService); canActivate(ctx: Ctx) { ...; return true; } }
+const timing: InterceptorFn = async (ctx, next) => { const r = await next(); ctx.setHeader("x-t", "1"); return r; };
+```
+
+`@UseGuards(...)` / `@UseInterceptors(...)` on a controller or a method; `createApp({ guards, interceptors })` for all routes. Order: params/query conversion, guards (app, controller, route), interceptors (app outermost), body, validation, handler. A guard returning anything but `true` gives 403 (SPK2007); throw an `HttpError` for another status.
+
+## Errors
+
+- `throw new HttpError(status, detail?, { code?, extensions?, headers? })`, or `HttpError.badRequest / unauthorized / forbidden / notFound / conflict / unprocessable / tooManyRequests(detail, options)`. Sent as `application/problem+json`: `{ type, title, status, detail, code, ...extensions }`.
+- Any other thrown error: logged, 500 SPK5000; its message is sent only when `exposeErrors` is on (default in development and test). Stacks are never sent.
+- `createApp({ onError: (error, ctx) => error instanceof MyError ? HttpError.conflict(error.message) : undefined })` maps your errors.
+- Startup errors (SPK1xxx) stop `init()` / `listen()`: the message names the culprit and the fix. Reference: docs/errors.md.
+
+## App
+
+`createApp({ controllers, providers?, guards?, interceptors?, onError?, exposeErrors?, bodyLimit?, logger?, engine? })`
+
+- `await app.listen({ port?, hostname?, signals?, shutdownTimeout? })` → `{ engine, port, url }`. SIGINT/SIGTERM: stop accepting, finish in-flight requests, `onShutdown`, exit.
+- `await app.init()` wires everything without listening. `app.routes` lists the routes. `app.fetch(request)` is a web-standard handler.
+- `await app.close()` shuts down.
+- `engine`: `"auto"` (default), `"bun"`, `"node"`.
+
+## Testing
+
+```ts
+import { createTestApp } from "@sparkus/testing";
+const app = await createTestApp({ controllers, overrides: [{ provide: UserService, useValue: fake }] });
+const res = await app.inject({ method: "POST", url: "/users", body: { name: "Ada" } });
+res.status; res.json(); res.headers; res.text;
+```
+
+In memory, full pipeline, no port.
+
+## CLI
+
+- `sparkus init <dir>`: new project with AGENTS.md, CLAUDE.md, skills, check hook.
+- `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`.
+- `sparkus routes [entry] --json`: list routes.
+- `sparkus dev [entry]`: run and restart on changes under src/.
+
+The entry exports the app (`export default app`), `src/app.ts` by default.
