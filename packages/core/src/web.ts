@@ -101,7 +101,12 @@ export function toResponse(value: unknown, ctx: WebContext, init: ResponseInit, 
             return value;
         }
         if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
-            return new Response(value, { status, headers: withHeaders(BINARY_TYPE, headers) });
+            // Typed loosely: Node's and Bun's BodyInit disagree on Uint8Array<ArrayBufferLike>, and
+            // these sources must type check under the config of any project that imports them.
+            return new Response(value as unknown as ConstructorParameters<typeof Response>[0], {
+                status,
+                headers: withHeaders(BINARY_TYPE, headers),
+            });
         }
     } else if (value === undefined) {
         return new Response(null, { status: status === 200 ? 204 : status, headers: headers ?? undefined });

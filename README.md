@@ -61,6 +61,20 @@ await createApp({ controllers: [UserController] }).listen({ port: 3000 });
 | `@sparkus/testing` | `createTestApp()` with overrides and in-memory `inject()`. |
 | `@sparkus/cli` | The `sparkus` command (early). |
 
+## Command line
+
+```bash
+bunx @sparkus/cli init my-api
+```
+
+Creates a project ready for humans and agents: an example feature with its tests, `AGENTS.md` (conventions), `CLAUDE.md`, skills in `.claude/skills/` (add an endpoint, add a service, write a test, fix an `SPK` error) and a hook that runs `sparkus check --json` after every edit.
+
+| Command | What it does |
+|---|---|
+| `sparkus dev [entry]` | Runs the app and restarts it on every change under `src/` (our own watcher, JSON events with `--json`). |
+| `sparkus check [entry]` | Wires the app (DI, routes, schemas) without listening; prints the first error with its code. |
+| `sparkus routes [entry]` | Lists the routes. |
+
 ## Testing an app
 
 ```ts

@@ -11,3 +11,5 @@ bench/results
 packages/*/dist
 tests/*/dist
 *.tsbuildinfo
+packages/cli/test/tmp-init
+packages/cli/test/tmp-dev

@@ -1,22 +1,53 @@
 #!/usr/bin/env bun
 import { CliError, describeError, loadApp } from "./app-loader.js";
 import { ArgsError, parseArgs, suggest, type FlagSpecs } from "./args.js";
+import { dev } from "./dev.js";
+import { initProject } from "./init.js";
 
 const VERSION = "1.0.0-alpha.0";
 
 const GLOBAL_FLAGS: FlagSpecs = {
     help: { type: "boolean", short: "h", description: "Show help." },
     version: { type: "boolean", short: "v", description: "Print the version." },
-    json: { type: "boolean", description: "Machine-readable output (one JSON document on stdout)." },
+    json: { type: "boolean", description: "Machine-readable output (JSON on stdout)." },
+    watch: { type: "string", description: "Folder watched by dev (default: src)." },
 };
 
 interface Command {
     usage: string;
     summary: string;
-    run(args: { json: boolean; positionals: string[] }): number | Promise<number>;
+    run(args: { json: boolean; positionals: string[]; flags: Record<string, string | boolean> }): number | Promise<number>;
 }
 
 const COMMANDS: Record<string, Command> = {
+    init: {
+        usage: "init <dir>",
+        summary: "Create a project ready for agents: app, tests, AGENTS.md, CLAUDE.md, skills, check hook.",
+        run: ({ json, positionals }) => {
+            const dir = positionals[0];
+            if (dir === undefined) throw new ArgsError("Missing folder: sparkus init my-api");
+            const { root, name, files } = initProject(dir, process.cwd());
+            print(
+                json,
+                { ok: true, root, name, files },
+                [`✓ ${name}: ${files.length} files in ${dir}`, "", `  cd ${dir}`, "  bun install", "  bun test", "  bun run dev"].join(
+                    "\n",
+                ),
+            );
+            return 0;
+        },
+    },
+    dev: {
+        usage: "dev [entry]",
+        summary: "Run the app (src/main.ts) and restart it on every change under src/.",
+        run: ({ json, positionals, flags }) =>
+            dev({
+                entry: positionals[0] ?? "src/main.ts",
+                watchDir: typeof flags.watch === "string" ? flags.watch : "src",
+                cwd: process.cwd(),
+                json,
+            }),
+    },
     check: {
         usage: "check [entry]",
         summary: "Load the app and wire it (DI, routes, schemas) without listening. Reports the first error.",
@@ -112,15 +143,15 @@ export async function main(argv: readonly string[]): Promise<number> {
     try {
         const { positionals, flags } = parseArgs(argv, GLOBAL_FLAGS);
         json = flags.json === true;
-        if (flags.version === true) return COMMANDS.version!.run({ json, positionals });
+        if (flags.version === true) return COMMANDS.version!.run({ json, positionals, flags });
         const name = positionals[0] ?? "help";
-        if (flags.help === true || name === "help") return COMMANDS.help!.run({ json, positionals });
+        if (flags.help === true || name === "help") return COMMANDS.help!.run({ json, positionals, flags });
         const command = COMMANDS[name];
         if (command === undefined) {
             const hint = suggest(name, Object.keys(COMMANDS));
             throw new ArgsError(`Unknown command "${name}".${hint ? ` Did you mean "${hint}"?` : ""} Run sparkus help.`);
         }
-        return await command.run({ json, positionals: positionals.slice(1) });
+        return await command.run({ json, positionals: positionals.slice(1), flags });
     } catch (error) {
         const { code, message } = describeError(error);
         if (json) process.stdout.write(JSON.stringify({ ok: false, error: { code, message } }) + "\n");

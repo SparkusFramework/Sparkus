@@ -1,3 +1,5 @@
+/// <reference types="bun" />
+// Bun globals for projects that type check these sources without "bun" in their types.
 import {
     NO_PARAMS,
     createFetchHandler,

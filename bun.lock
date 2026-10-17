@@ -47,6 +47,7 @@
         "sparkus": "./dist/main.js",
       },
       "devDependencies": {
+        "@sparkus/testing": "workspace:*",
         "sparkus": "workspace:*",
       },
     },

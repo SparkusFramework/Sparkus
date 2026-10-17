@@ -16,6 +16,7 @@
     },
     "files": ["dist"],
     "devDependencies": {
+        "@sparkus/testing": "workspace:*",
         "sparkus": "workspace:*"
     },
     "scripts": {
