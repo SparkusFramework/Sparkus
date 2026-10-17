@@ -12,9 +12,19 @@ export interface RouteOptions {
     params?: Schema;
     /** Types of the query parameters, converted and validated like `params`. Unknown keys are dropped. */
     query?: Schema;
+    /**
+     * Schema of the success response. The handler's return type is checked against it at
+     * compile time, and it documents the response in OpenAPI. Not validated at runtime.
+     */
+    response?: Schema;
     /** Status of a successful response. Defaults to 200 (204 when the handler returns nothing). */
     status?: number;
 }
+
+/** What a handler may return for a route: the response schema's type when declared. */
+export type HandlerResult<O extends RouteOptions> = O["response"] extends Schema
+    ? Infer<O["response"]> | Promise<Infer<O["response"]>> | Response
+    : unknown;
 
 /**
  * Request context received by handlers, guards and interceptors. `body` is

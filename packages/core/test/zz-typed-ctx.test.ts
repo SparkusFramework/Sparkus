@@ -26,3 +26,27 @@ class Typed {
 }
 
 test("typed params compile", () => expect(Typed).toBeDefined());
+
+const User = t.object({ id: t.integer(), name: t.string() });
+const GetUser = { params: t.object({ id: t.integer() }), response: User };
+
+@Controller("/users")
+class WithResponse {
+    @Get("/:id", GetUser)
+    get(ctx: Ctx<typeof GetUser>) {
+        return { id: ctx.params.id, name: "Ada" };
+    }
+
+    @Get("/:id/async", GetUser)
+    async getAsync(ctx: Ctx<typeof GetUser>) {
+        return { id: ctx.params.id, name: "Ada" };
+    }
+
+    // @ts-expect-error name is missing from the response
+    @Get("/:id/broken", GetUser)
+    broken(ctx: Ctx<typeof GetUser>) {
+        return { id: ctx.params.id };
+    }
+}
+
+test("response schemas type the handler's result", () => expect(WithResponse).toBeDefined());

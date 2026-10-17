@@ -37,6 +37,7 @@ export interface CompiledRoute {
     readonly body: Schema | undefined;
     readonly params: Schema | undefined;
     readonly query: Schema | undefined;
+    readonly response: Schema | undefined;
     readonly guards: number;
     readonly interceptors: number;
     /** Runs the whole pipeline. Returns the handler's value, or a promise of it. */
@@ -148,6 +149,7 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                 body,
                 params,
                 query,
+                response: route.options.response,
                 guards: guards.length,
                 interceptors: interceptors.length,
                 run: composePipeline({

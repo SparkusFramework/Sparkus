@@ -1,4 +1,4 @@
-import type { Ctx, HttpMethod, RouteOptions } from "./context.js";
+import type { Ctx, HandlerResult, HttpMethod, RouteOptions } from "./context.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import type { GuardLike, InterceptorLike } from "./pipeline.js";
 
@@ -30,7 +30,7 @@ function route(method: HttpMethod) {
     const decorator = `@${method[0]}${method.slice(1).toLowerCase()}()`;
     return function <O extends RouteOptions = {}>(path = "", options?: O) {
         return function <This>(
-            value: (this: This, ctx: Ctx<O>) => unknown,
+            value: (this: This, ctx: Ctx<O>) => HandlerResult<O>,
             context: ClassMethodDecoratorContext<This>,
         ): void {
             if (context.static || context.private) {

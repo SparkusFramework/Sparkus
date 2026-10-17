@@ -9,7 +9,14 @@ export {
     type RouteInfo,
 } from "./app.js";
 export type { CompiledRoute } from "./compile.js";
-export { NO_PARAMS, type Ctx, type HttpMethod, type RequestContext, type RouteOptions } from "./context.js";
+export {
+    NO_PARAMS,
+    type Ctx,
+    type HandlerResult,
+    type HttpMethod,
+    type RequestContext,
+    type RouteOptions,
+} from "./context.js";
 export {
     Controller,
     Delete,

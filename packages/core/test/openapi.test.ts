@@ -59,3 +59,22 @@ test("openapi() describes paths, parameters, bodies and errors", async () => {
     ]);
     expect(doc.paths["/users"].post.responses.default.content["application/problem+json"]).toBeDefined();
 });
+
+test("a response schema documents the success body", async () => {
+    const Item = { response: t.object({ id: t.integer() }) };
+    @Controller()
+    class Items {
+        @Get("/item", Item)
+        get() {
+            return { id: 1 };
+        }
+    }
+    const app = createApp({ controllers: [Items] });
+    await app.init();
+    const doc = app.openapi() as any;
+    expect(doc.paths["/item"].get.responses["200"].content["application/json"].schema).toEqual({
+        type: "object",
+        properties: { id: { type: "integer" } },
+        required: ["id"],
+    });
+});

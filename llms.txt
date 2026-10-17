@@ -42,7 +42,7 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 - `@Controller(prefix)` on a class; it must be listed in `createApp({ controllers })`.
 - `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Head`, `@Options` on public instance methods: `(path, options?)`.
 - Paths: static segments and `:name` parameters. Case-sensitive; a trailing slash is a different path; static segments win over parameters. HEAD falls back to GET. Unknown path: 404 (SPK2001). Known path, other method: 405 with `Allow` (SPK2002).
-- Options: `{ params?, query?, body?, status? }`. Declare them as a `const` and type the handler with `Ctx<typeof Options>`.
+- Options: `{ params?, query?, body?, response?, status? }`. `response` types what the handler returns (checked at compile time) and documents it in OpenAPI. Declare them as a `const` and type the handler with `Ctx<typeof Options>`.
 
 ## Schemas (`t`)
 

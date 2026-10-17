@@ -48,8 +48,8 @@ const PROBLEM = {
 /**
  * OpenAPI 3.1 description of the compiled routes: paths, typed path and
  * query parameters, JSON request bodies, the success status and the
- * problem+json error shape. Response bodies are not described yet (no
- * response schemas).
+ * problem+json error shape, and the success body when the route declares
+ * a response schema.
  */
 export function generateOpenApi(routes: readonly CompiledRoute[], options: OpenApiOptions = {}): Record<string, unknown> {
     const paths: Record<string, Record<string, unknown>> = {};
@@ -75,7 +75,12 @@ export function generateOpenApi(routes: readonly CompiledRoute[], options: OpenA
                 requestBody: { required: true, content: { "application/json": { schema: toJsonSchema(route.body) } } },
             }),
             responses: {
-                [success]: { description: successText(route.status) },
+                [success]: {
+                    description: successText(route.status),
+                    ...(route.response !== undefined && {
+                        content: { "application/json": { schema: toJsonSchema(route.response) } },
+                    }),
+                },
                 default: PROBLEM,
             },
         };
