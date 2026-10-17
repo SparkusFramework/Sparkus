@@ -44,6 +44,10 @@ export function checkSchema(schema: Schema, source: Source, where: string, pathP
             const use = "use t.string(), t.integer(), t.number() or t.boolean()";
             throw invalidSchema(where, source, `field "${key}" is t.${field.kind}(); ${use}`);
         }
+        if (field.nullable === true) {
+            const reason = `field "${key}" is nullable, but ${source === "params" ? "path" : "query"} parameters are strings, never null`;
+            throw invalidSchema(where, source, `${reason}. Remove t.nullable()${source === "query" ? ", use t.optional() for a missing value" : ""}`);
+        }
         if (source === "params" && field.optional) {
             const reason = `field "${key}" is optional, but path parameters are always present`;
             throw invalidSchema(where, source, `${reason}. Remove t.optional()`);

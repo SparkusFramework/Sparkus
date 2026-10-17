@@ -46,7 +46,7 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 
 ## Schemas (`t`)
 
-`t.string({ min, max })`, `t.integer({ min, max })`, `t.number({ min, max })`, `t.boolean()`, `t.object({ ... })`, `t.array(item, { min, max })`, `t.optional(schema)`.
+`t.string({ min, max })`, `t.integer({ min, max })`, `t.number({ min, max })`, `t.boolean()`, `t.object({ ... })`, `t.array(item, { min, max })`, `t.optional(schema)` (may be absent: `T | undefined`), `t.nullable(schema)` (may be `null`: `T | null`; both combine). Not allowed in `params`/`query` (SPK1017).
 
 - `body`: any schema. JSON only (`content-type: application/json`, else 415 SPK2005), 1 MiB by default (413 SPK2006). Invalid: 400 SPK2004 with `issues: [{ path: "$.age", message }]`. Fields the schema does not list are dropped, at every depth: `ctx.body` holds exactly its type, and an absent optional field is absent (not `undefined`), so `{ ...entity, ...ctx.body }` is safe.
 - `response`: fields the schema does not list are dropped before interceptors run and before sending (a `passwordHash` on an entity never leaks). Return your entities as they are. A value whose shape does not match (an object or array where the schema says otherwise) answers 500 SPK5001 naming the route and the path.

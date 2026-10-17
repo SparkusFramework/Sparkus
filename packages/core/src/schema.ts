@@ -17,6 +17,8 @@ export interface Schema<T = unknown, Optional extends boolean = boolean> {
     readonly kind: Kind;
     readonly bounds: Bounds;
     readonly optional: Optional;
+    /** Accepts `null` besides the value (`t.nullable()`). Absent means false. */
+    readonly nullable?: boolean;
     readonly shape?: Record<string, Schema>;
     readonly item?: Schema;
     /** Phantom field: carries the inferred type, never set at runtime. */
@@ -56,6 +58,8 @@ export const t = {
     object: <S extends Shape>(shape: S) => node<ObjectType<S>>("object", {}, { shape }),
     array: <S extends Schema>(item: S, bounds?: Bounds) => node<Infer<S>[]>("array", bounds, { item }),
     optional: <T>(schema: Schema<T, boolean>) => ({ ...schema, optional: true }) as Schema<T, true>,
+    /** `T | null`. Combines with `t.optional()`: `t.optional(t.nullable(t.string()))` is `string | null | undefined`. */
+    nullable: <T, O extends boolean>(schema: Schema<T, O>) => ({ ...schema, nullable: true }) as Schema<T | null, O>,
 };
 
 export interface Issue {
@@ -115,6 +119,16 @@ function checkKeys(schema: Schema, where: string): void {
 }
 
 /**
+ * Lets `null` through the code emitted for a nullable schema. The result stays `null`,
+ * or becomes the copy the code built.
+ */
+function allowNull(emitted: Emitted, v: string, copy: string): Emitted {
+    if (emitted.code === "") return emitted;
+    if (emitted.out === v) return { code: `if (${v} !== null) {\n${emitted.code}}\n`, out: v };
+    return { code: `let ${copy} = null;\nif (${v} !== null) {\n${emitted.code}${copy} = ${emitted.out};\n}\n`, out: copy };
+}
+
+/**
  * Emits a flat sequence of checks with no closures. With `build`, objects
  * are rebuilt with their declared fields only; arrays are copied only when
  * their items are.
@@ -122,13 +136,18 @@ function checkKeys(schema: Schema, where: string): void {
 function emitChecks(schema: Schema, fail: (path: string, message: string) => string, build: boolean): Emitted {
     let counter = 0;
 
-    const emit = (s: Schema, v: string, path: string): Emitted => {
+    const emit = (s: Schema, v: string, path: string): Emitted =>
+        s.nullable === true ? allowNull(emitValue(s, v, path), v, `n${counter++}`) : emitValue(s, v, path);
+
+    const emitValue = (s: Schema, v: string, path: string): Emitted => {
         const failWith = (message: string) => fail(path, message);
+        // Type messages only: a nullable value failing them is neither null nor of its type.
+        const orNull = s.nullable === true ? " or null" : "";
         const { min, max } = s.bounds;
 
         switch (s.kind) {
             case "string": {
-                let code = `if (typeof ${v} !== "string") ${failWith("must be a string")}\n`;
+                let code = `if (typeof ${v} !== "string") ${failWith(`must be a string${orNull}`)}\n`;
                 if (min !== undefined) code += `if (${v}.length < ${min}) ${failWith(`must have at least ${min} characters`)}\n`;
                 if (max !== undefined) code += `if (${v}.length > ${max}) ${failWith(`must have at most ${max} characters`)}\n`;
                 return { code, out: v };
@@ -137,16 +156,16 @@ function emitChecks(schema: Schema, fail: (path: string, message: string) => str
             case "number": {
                 let code =
                     s.kind === "integer"
-                        ? `if (!Number.isInteger(${v})) ${failWith("must be an integer")}\n`
-                        : `if (typeof ${v} !== "number" || !Number.isFinite(${v})) ${failWith("must be a number")}\n`;
+                        ? `if (!Number.isInteger(${v})) ${failWith(`must be an integer${orNull}`)}\n`
+                        : `if (typeof ${v} !== "number" || !Number.isFinite(${v})) ${failWith(`must be a number${orNull}`)}\n`;
                 if (min !== undefined) code += `if (${v} < ${min}) ${failWith(`must be >= ${min}`)}\n`;
                 if (max !== undefined) code += `if (${v} > ${max}) ${failWith(`must be <= ${max}`)}\n`;
                 return { code, out: v };
             }
             case "boolean":
-                return { code: `if (typeof ${v} !== "boolean") ${failWith("must be a boolean")}\n`, out: v };
+                return { code: `if (typeof ${v} !== "boolean") ${failWith(`must be a boolean${orNull}`)}\n`, out: v };
             case "object": {
-                let code = `if (typeof ${v} !== "object" || ${v} === null || Array.isArray(${v})) ${failWith("must be an object")}\n`;
+                let code = `if (typeof ${v} !== "object" || ${v} === null || Array.isArray(${v})) ${failWith(`must be an object${orNull}`)}\n`;
                 const fields: Field[] = [];
                 for (const [key, child] of Object.entries(s.shape!)) {
                     const local = `v${counter++}`;
@@ -176,7 +195,7 @@ function emitChecks(schema: Schema, fail: (path: string, message: string) => str
             case "array": {
                 const i = `i${counter++}`;
                 const el = `e${counter++}`;
-                let code = `if (!Array.isArray(${v})) ${failWith("must be an array")}\n`;
+                let code = `if (!Array.isArray(${v})) ${failWith(`must be an array${orNull}`)}\n`;
                 if (min !== undefined) code += `if (${v}.length < ${min}) ${failWith(`must have at least ${min} items`)}\n`;
                 if (max !== undefined) code += `if (${v}.length > ${max}) ${failWith(`must have at most ${max} items`)}\n`;
                 const inner = emit(s.item!, el, `${path} + "[" + ${i} + "]"`);
@@ -228,9 +247,13 @@ export function compileProjector(schema: Schema, where: string): Projector | nul
     checkKeys(schema, where);
     let counter = 0;
 
-    const emit = (s: Schema, v: string, path: string): Emitted => {
+    const emit = (s: Schema, v: string, path: string): Emitted =>
+        s.nullable === true ? allowNull(emitValue(s, v, path), v, `n${counter++}`) : emitValue(s, v, path);
+
+    const emitValue = (s: Schema, v: string, path: string): Emitted => {
+        const orNull = s.nullable === true ? " or null" : "";
         if (s.kind === "object") {
-            let code = `if (typeof ${v} !== "object" || ${v} === null || Array.isArray(${v})) mismatch(${path}, "an object", ${v});\n`;
+            let code = `if (typeof ${v} !== "object" || ${v} === null || Array.isArray(${v})) mismatch(${path}, "an object${orNull}", ${v});\n`;
             const fields: string[] = [];
             for (const [key, child] of Object.entries(s.shape!)) {
                 const local = `v${counter++}`;
@@ -254,7 +277,7 @@ export function compileProjector(schema: Schema, where: string): Projector | nul
         if (s.kind === "array") {
             const i = `i${counter++}`;
             const el = `e${counter++}`;
-            const code = `if (!Array.isArray(${v})) mismatch(${path}, "an array", ${v});\n`;
+            const code = `if (!Array.isArray(${v})) mismatch(${path}, "an array${orNull}", ${v});\n`;
             const inner = emit(s.item!, el, `${path} + "[" + ${i} + "]"`);
             if (inner.out === el) return { code, out: v };
             const target = `a${counter++}`;

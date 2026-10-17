@@ -83,3 +83,28 @@ class WithState {
 }
 
 test("the second Ctx parameter types state", () => expect(WithState).toBeDefined());
+
+const Nullable = {
+    body: t.object({ nick: t.nullable(t.string()), note: t.optional(t.nullable(t.string())) }),
+    response: t.object({ nick: t.nullable(t.string()) }),
+};
+
+@Controller("/nullable")
+class WithNullable {
+    @Post("", Nullable)
+    create(ctx: Ctx<typeof Nullable>) {
+        const nick: string | null = ctx.body.nick;
+        const note: string | null | undefined = ctx.body.note;
+        // @ts-expect-error nick may be null
+        const wrong: string = ctx.body.nick;
+        return { nick: note === undefined ? nick : wrong };
+    }
+
+    // @ts-expect-error nick may be null but not undefined
+    @Post("/broken", Nullable)
+    broken() {
+        return { nick: undefined };
+    }
+}
+
+test("t.nullable types T | null", () => expect(WithNullable).toBeDefined());

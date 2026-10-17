@@ -335,8 +335,19 @@ function loadEntity() {
     };
 }
 
+const Nullable = {
+    body: t.object({ nick: t.nullable(t.string()), manager: t.nullable(t.object({ name: t.string() })) }),
+    response: t.object({ nick: t.nullable(t.string()), manager: t.nullable(t.object({ name: t.string() })) }),
+};
+
 @Controller("/schema")
 class SchemaController {
+    @Post("/nullable", Nullable)
+    nullable(ctx: Ctx<typeof Nullable>) {
+        // The response schema filters what the body schema already filtered, and keeps null.
+        return { ...ctx.body, echoed: true };
+    }
+
     @Post("/body", Profile)
     body(ctx: Ctx<typeof Profile>) {
         return { keys: Object.keys(ctx.body), body: ctx.body, prototype: Object.getPrototypeOf(ctx.body) === Object.prototype };

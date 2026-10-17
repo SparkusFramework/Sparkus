@@ -84,4 +84,13 @@ describe("checkSchema", () => {
         );
         expect(() => checkSchema(t.string(), "query", where, [])).toThrow("must be t.object({ ... })");
     });
+
+    test("no nullable fields: parameters are strings", () => {
+        expect(() => checkSchema(t.object({ q: t.optional(t.nullable(t.string())) }), "query", where, [])).toThrow(
+            'query schema field "q" is nullable, but query parameters are strings, never null. Remove t.nullable(), use t.optional() for a missing value.',
+        );
+        expect(() => checkSchema(t.object({ id: t.nullable(t.integer()) }), "params", where, ["id"])).toThrow(
+            'field "id" is nullable, but path parameters are strings, never null. Remove t.nullable().',
+        );
+    });
 });

@@ -13,6 +13,12 @@ type JsonSchema = Record<string, unknown>;
 
 /** Converts a `t` schema to JSON Schema (draft 2020-12, as used by OpenAPI 3.1). */
 export function toJsonSchema(schema: Schema): JsonSchema {
+    const json = typeJsonSchema(schema);
+    // 2020-12 spells nullable as a type list: { "type": ["string", "null"] }.
+    return schema.nullable === true ? { ...json, type: [json.type, "null"] } : json;
+}
+
+function typeJsonSchema(schema: Schema): JsonSchema {
     const { min, max } = schema.bounds;
     switch (schema.kind) {
         case "string":

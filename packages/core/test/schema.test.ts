@@ -117,3 +117,51 @@ describe("compileProjector", () => {
         expect(() => project(undefined)).toThrow("$ must be an object, got undefined");
     });
 });
+
+describe("t.nullable", () => {
+    const Profile = t.object({
+        nick: t.nullable(t.string({ min: 2 })),
+        manager: t.nullable(t.object({ name: t.string() })),
+        note: t.optional(t.nullable(t.string())),
+        scores: t.nullable(t.array(t.object({ value: t.integer() }))),
+    });
+
+    test("the parser keeps null and still copies declared fields when present", () => {
+        const parse = compileParser(Profile, invalid, WHERE);
+        expect(parse({ nick: null, manager: null, note: null, scores: null })).toEqual({
+            nick: null,
+            manager: null,
+            note: null,
+            scores: null,
+        });
+        expect(parse({ nick: "Ada", manager: { name: "Grace", extra: 1 }, scores: [{ value: 1, extra: 2 }] })).toEqual({
+            nick: "Ada",
+            manager: { name: "Grace" },
+            scores: [{ value: 1 }],
+        });
+    });
+
+    test("null stays required unless optional, and type errors say null was allowed", () => {
+        const parse = compileParser(Profile, invalid, WHERE);
+        expect(() => parse({ manager: null, scores: null })).toThrow("$.nick is required");
+        expect(() => parse({ nick: 5, manager: null, scores: null })).toThrow("$.nick must be a string or null");
+        expect(() => parse({ nick: "A", manager: null, scores: null })).toThrow("$.nick must have at least 2 characters");
+        expect(() => compileParser(t.object({ a: t.string() }), invalid, WHERE)({ a: null })).toThrow("$.a must be a string");
+        expect(compileValidator(Profile)({ nick: null, manager: [], scores: null })).toEqual({
+            path: "$.manager",
+            message: "must be an object or null",
+        });
+    });
+
+    test("the projector copies null and still filters objects", () => {
+        const project = compileProjector(Profile, WHERE)!;
+        expect(JSON.stringify(project({ nick: null, manager: null, scores: null, secret: 1 }))).toBe(
+            '{"nick":null,"manager":null,"scores":null}',
+        );
+        expect(JSON.stringify(project({ nick: "Ada", manager: { name: "G", salary: 1 }, scores: [] }))).toBe(
+            '{"nick":"Ada","manager":{"name":"G"},"scores":[]}',
+        );
+        expect(() => project({ nick: null, manager: "boss", scores: null })).toThrow("$.manager must be an object or null, got string");
+        expect(compileProjector(t.nullable(t.object({ id: t.integer() })), WHERE)!(null)).toBeNull();
+    });
+});

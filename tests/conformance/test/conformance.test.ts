@@ -291,6 +291,20 @@ for (const [label, start] of targets) {
                 });
             });
 
+            test("t.nullable: null goes through body and response, objects are still filtered", async () => {
+                const send = (body: unknown) =>
+                    target.request("/schema/nullable", { method: "POST", headers: JSON_BODY, body: JSON.stringify(body) });
+                expectJson(await send({ nick: null, manager: null }), 200, { nick: null, manager: null });
+                expectJson(await send({ nick: "Ada", manager: { name: "Grace", salary: 1 } }), 200, {
+                    nick: "Ada",
+                    manager: { name: "Grace" },
+                });
+                expectProblem(await send({ nick: null }), 400, { issues: [{ path: "$.manager", message: "is required" }] });
+                expectProblem(await send({ nick: 1, manager: null }), 400, {
+                    issues: [{ path: "$.nick", message: "must be a string or null" }],
+                });
+            });
+
             const PUBLIC = { id: 1, name: "Ada", address: { city: "London" }, roles: [{ name: "admin" }, { name: "author" }] };
 
             test("the response keeps only the fields of its schema", async () => {
