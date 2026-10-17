@@ -1,0 +1,24 @@
+{
+    "name": "@sparkus/testing",
+    "version": "1.0.0-alpha.0",
+    "description": "In-memory testing helpers for Sparkus apps.",
+    "license": "MIT",
+    "type": "module",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "bun": "./src/index.ts",
+            "types": "./src/index.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": ["dist", "src"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/SparkusFramework/Sparkus.git",
+        "directory": "packages/testing"
+    },
+    "dependencies": {
+        "@sparkus/core": "workspace:*"
+    }
+}

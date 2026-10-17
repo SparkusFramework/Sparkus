@@ -1,20 +1,12 @@
 {
-    "compilerOptions": {
-        "experimentalDecorators": true,
-        "emitDecoratorMetadata": true,
-        "esModuleInterop": true,
-        "declaration": true,
-
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
-        "target": "ESNext",
-
-        "rootDir": "src",
-        "outDir": "dist"
-    },
-    "include": ["src/**/*.mts"],
-    "ts-node": {
-        "esm": true,
-        "experimentalSpecifierResolution": "node"
-    }
+    "files": [],
+    "references": [
+        { "path": "packages/core" },
+        { "path": "packages/engine-bun" },
+        { "path": "packages/engine-node" },
+        { "path": "packages/sparkus" },
+        { "path": "packages/testing" },
+        { "path": "packages/cli" },
+        { "path": "tests/conformance" }
+    ]
 }
