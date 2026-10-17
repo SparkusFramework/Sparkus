@@ -36,37 +36,51 @@ But : **valider le pari de perf avant de construire.**
 - [x] Cibles Bun : `Bun.serve` brut (plafond), Sparkus, Elysia, Hono.
 - [x] Cibles Node : `node:http` brut (plafond), Sparkus, Fastify, Express, NestJS (Express), NestJS (Fastify), Hono.
 - [x] `spike/` : prototype du noyau. Gardé comme cible de bench (`spike-bun`, `spike-node`) tant que la v1 n'a pas prouvé qu'elle n'est pas plus lente ; supprimé ensuite.
+- [x] Méthode fiabilisée : rounds entrelacés, ratios appariés, épinglage CPU (la « dérive » venait d'un voisin SMT sur le cœur du serveur), mode A/B contre une ref git, verdict « prouvé » par test des signes. Session de référence Windows : `bench/reference/2026-10-17-windows.md`.
 - [ ] Mesures publiables sous Linux, plusieurs runs.
 
-**Critère de sortie** : Sparkus/Bun à moins de 10 % de `Bun.serve` brut et devant Elysia ; Sparkus/Node devant Fastify. Atteint sous Windows (1 run).
+**Critère de sortie** : Sparkus/Bun à moins de 10 % de `Bun.serve` brut et devant Elysia ; Sparkus/Node devant Fastify. Atteint sous Windows (session de référence, 5 rounds).
 
-## Phase 1 — Noyau v1 *(en cours)*
+## Phase 1 — Noyau v1 *(terminée)*
 
 - [x] Monorepo Bun : `packages/core`, `engine-bun`, `engine-node`, `testing`, `cli`, et `sparkus` (paquet public qui choisit le moteur). v0 et `dist/` versionné supprimés.
-- [x] Conteneur DI : singletons, `token<T>()` pour les valeurs, providers (`useValue`, `useClass`, `useFactory`), cycle de vie `onInit` (dépendances d'abord) et `onShutdown` (ordre inverse), cycles détectés avec le chemin complet, échec de construction avec le chemin de dépendances, overrides pour les tests.
-- [x] Contexte de requête (`method`, `path`, `params`, `query`, `body`, `header()`, `status`, `setHeader()`, `state`), handlers sync et async sans `await` superflu.
+- [x] Conteneur DI : singletons, `token<T>()` pour les valeurs, providers (`useValue`, `useClass`, `useFactory`), cycle de vie `onInit` (dépendances d'abord) et `onShutdown` (ordre inverse), cycles détectés avec le chemin complet, échec de construction avec le chemin de dépendances, overrides pour les tests, injection par constructeur refusée au démarrage.
+- [x] Contexte de requête (`method`, `path`, `params`, `query`, `body`, `header()`, `status`, `setHeader()`, `state` typé), handlers sync et async sans `await` superflu.
 - [x] Réponses : objet → JSON, `string` → text/plain, octets → octet-stream, `undefined` → 204, `Response` passée telle quelle.
-- [x] Erreurs `application/problem+json` (RFC 9457) avec code stable : `HttpError` et ses raccourcis, 404, 405 + `Allow`, 413, 415, 400 (JSON invalide, validation avec chemin), 403 (guard). Erreurs inattendues : 500 journalisée, message exposé seulement en dev/test, jamais de stack. `onError` pour mapper ses propres erreurs.
-- [x] Guards et intercepteurs (fonctions ou classes injectables), au niveau app, contrôleur et route, **compilés dans la pipeline** : une route sans guard ni intercepteur exécute directement son handler lié. Les « hooks » globaux sont les guards et intercepteurs de l'app ; les hooks avant routage (`onRequest` sur toutes les requêtes, 404 comprises) arrivent avec les logs en phase 3.
+- [x] Erreurs `application/problem+json` (RFC 9457) avec code stable : `HttpError` et ses raccourcis, 404 (avec suggestion de route en dev), 405 + `Allow`, 413, 415, 400 (JSON invalide, validation avec chemin), 403 (guard). Erreurs inattendues : 500 journalisée, message exposé seulement en dev/test, jamais de stack. `onError` pour mapper ses propres erreurs. Messages au format « [code] problème, coupable. Correction. », référence dans `docs/errors.md`.
+- [x] Guards et intercepteurs (fonctions ou classes injectables), au niveau app, contrôleur et route, **compilés dans la pipeline** : une route sans guard ni intercepteur exécute directement son handler lié. Les hooks avant routage (`onRequest` sur toutes les requêtes, 404 comprises) arrivent avec les logs en phase 3.
 - [x] Arrêt propre : SIGINT/SIGTERM, plus de nouvelles connexions, drain des requêtes en cours (keep-alive compris), coupure forcée après `shutdownTimeout`, puis `onShutdown`.
 - [x] `app.fetch` (Request → Response, sans serveur) et `@sparkus/testing` (`createTestApp`, `inject()` en mémoire).
+- [x] API publique (`@sparkus/core`, `sparkus`) séparée de l'interface des moteurs (`@sparkus/core/engine`).
 - [x] Routeur Node réécrit : parcours par index sans `split`, aucune allocation sur les branches qui échouent, params construits par une fabrique générée par route.
 - [x] **Suite de conformité unique** jouée sur 4 cibles (mémoire, moteur Bun, moteur Node sous Bun, vrai process Node) : toute différence entre moteurs est un bug.
 - [x] CI GitHub Actions (Ubuntu + Windows, Node 22 et 24) et contrôle D9 (`bun run check:deps`).
-- [x] Amorce du CLI : parseur d'arguments maison, `help`, `version`, `--json`, suggestions sur faute de frappe.
-- [ ] Revue par 4 agents experts en optimisation, qui prouvent chaque proposition par une mesure.
-- [ ] Outillage D11, à intégrer au merge des experts : nos sources doivent compiler sous la config de n'importe quel projet qui les importe (`/// <reference types="bun" />` dans `engine-bun`, typage du corps binaire dans `web.ts`), et le bench compile ses cibles avec `bun build` au lieu de `tsc`.
+- [x] Outillage D11 : `bun check`, `bun build` (code splitting entre points d'entrée), `tsc` pour les `.d.ts` seulement ; nos sources compilent sous la config de n'importe quel projet.
+- [x] Revue par 5 agents experts (moteur Bun, moteur Node, noyau, méthode de bench, expérience agent), chaque gain prouvé en A/B. Gains gardés (Windows, épinglé, 5 rounds) :
+  - query en objets « fast mode » sous V8 : params-query Node **+12,8 %** ;
+  - 4xx sans stack trace ni defines de champs : avalanche de 400 Node **+28,9 %**, Bun **+5,1 %** ;
+  - 404/405 rendus directement en texte : avalanche de 404 Node **+84,4 %**, Bun **+8,0 %** ;
+  - pas d'objet `init` pour les réponses JSON 200 sous Bun : hello **+1,1 %** d'efficacité CPU.
 
 Écarts assumés :
 
 - Sous Bun, au-delà de 2 × `bodyLimit`, c'est Bun qui répond 413 (sans corps problem+json) avant tout handler. En dessous, Sparkus répond lui-même.
 - Pas de wildcard (`/files/*`) ni de routes héritées d'un contrôleur parent pour l'instant (erreur `SPK1014` explicite).
 
+Reporté à la phase suivante :
+
+- Moteur Node : 2,8 % derrière le prototype sur `hello` (session de référence) ; variantes H2 à H7 de l'expert Node non mesurées (interrompues par un redémarrage Windows Update).
+- Moteur Bun : `post-validate` à 95 % du plafond.
+- Champs inconnus du body : acceptés aujourd'hui ; décider s'ils sont rejetés ou retirés (sécurité), et mesurer le coût.
+- Comparaison finale v1 intégrée contre `bun-raw`, `node-raw`, Elysia et Fastify ; chiffres Linux (D8).
+
 ## Phase 2 — Schémas et contrat
 
-- Constructeur de schémas natif (JSON Schema sous le capot) : validation compilée, types inférés, **sérialisation compilée** des réponses.
-- Compatibilité [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType) en chemin secondaire.
-- OpenAPI 3.1 généré, client TypeScript typé généré.
+- [x] Un schéma par entrée : `params` et `query` typés, convertis et validés (400 qui nomme la valeur), `body` validé, `response` qui type le retour du handler à la compilation. Schémas vérifiés au démarrage (`SPK1017`).
+- [x] OpenAPI 3.1 généré depuis les schémas (`app.openapi()`, `sparkus openapi`).
+- [ ] **Sérialisation compilée** des réponses (à prouver en A/B contre `JSON.stringify`), et décision sur les champs non déclarés.
+- [ ] Compatibilité [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType) en chemin secondaire.
+- [ ] Client TypeScript typé généré.
 
 ## Phase 3 — Production
 
@@ -77,8 +91,10 @@ But : **valider le pari de perf avant de construire.**
 
 ## Phase 4 — Pensé pour les agents IA
 
+Déjà livré : `sparkus init` (app d'exemple, tests, `AGENTS.md`, `CLAUDE.md`, 4 skills, hook `sparkus check --json`), `sparkus check | routes | openapi` avec `--json`, `sparkus dev` (redémarrage simple, sans process de réserve), codes d'erreur avec correction et `docs/errors.md`, `llms.txt`, `inject()` en mémoire. Reste ci-dessous.
+
 - Conventions strictes et prévisibles : un fichier = un contrôleur ou un service, arborescence fixe.
-- CLI `sparkus` avec sortie `--json` : `new`, `dev`, `routes`, `graph` (graphe DI), `check` (valide routes et DI **sans démarrer le serveur**).
+- CLI `sparkus` avec sortie `--json` : `graph` (graphe DI) à ajouter.
 - CLI distribué en **exécutable natif** (`bun build --compile --bytecode`), cross-compilé Windows / Linux / macOS, publié sur npm avec un paquet par plateforme (modèle esbuild / Biome).
 - `sparkus dev` : **notre propre watcher**, dans le CLI, jamais dans le framework (pas de `bun --hot` ni `node --watch`).
   - Le CLI supervise l'app dans un process enfant ; `fs.watch` récursif avec debounce ; graphe d'imports (`Bun.Transpiler.scanImports`) pour savoir ce qu'un changement touche.

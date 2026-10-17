@@ -1,6 +1,6 @@
 # Working on Sparkus
 
-Instructions for anyone, human or agent, changing this repository. Read [ROADMAP.md](./ROADMAP.md) first: its decisions table (D1 to D10) is binding.
+Instructions for anyone, human or agent, changing this repository. Read [ROADMAP.md](./ROADMAP.md) first: its decisions table (D1 to D11) is binding.
 
 ## The mission
 
