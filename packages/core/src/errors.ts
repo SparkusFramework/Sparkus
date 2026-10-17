@@ -101,27 +101,39 @@ export interface HttpErrorOptions {
  *     throw HttpError.notFound(`User ${id} not found`, { code: "USER_NOT_FOUND" });
  *
  * The detail is always sent to the client, so never put secrets in it.
+ * A 4xx HttpError carries no stack trace (5xx ones do, they are logged):
+ * use `code` and `detail` to tell where it comes from.
  */
 export class HttpError extends Error {
-    override readonly name = "HttpError";
-    readonly status: number;
-    readonly detail: string | undefined;
-    readonly code: string | undefined;
-    readonly type: string;
-    readonly title: string;
-    readonly extensions: Record<string, unknown> | undefined;
-    readonly headers: Record<string, string> | undefined;
+    // Declared, not initialized: a class field on an Error subclass is a define per field,
+    // ~220 ns per construction under Bun. The constructor assigns them all, always in this order.
+    declare readonly name: "HttpError";
+    declare readonly status: number;
+    declare readonly detail: string | undefined;
+    declare readonly code: string | undefined;
+    declare readonly type: string;
+    declare readonly title: string;
+    declare readonly extensions: Record<string, unknown> | undefined;
+    declare readonly headers: Record<string, string> | undefined;
 
     constructor(status: number, detail?: string, options: HttpErrorOptions = {}) {
         const title = options.title ?? statusTitle(status);
-        super(detail ?? title, { cause: options.cause });
-        this.status = status;
-        this.detail = detail;
-        this.code = options.code;
-        this.type = options.type ?? "about:blank";
-        this.title = title;
-        this.extensions = options.extensions;
-        this.headers = options.headers;
+        // A 4xx is an expected answer, never logged: capturing its stack trace would cost ~5 µs
+        // per error under Node (~0.1 µs under Bun), which turns a 404 or 400 flood into CPU burn.
+        const stackTraceLimit = Error.stackTraceLimit;
+        if (status < 500) Error.stackTraceLimit = 0;
+        if (options.cause === undefined) super(detail ?? title);
+        else super(detail ?? title, { cause: options.cause });
+        Error.stackTraceLimit = stackTraceLimit;
+        const self = this as { -readonly [K in keyof HttpError]: HttpError[K] };
+        self.name = "HttpError";
+        self.status = status;
+        self.detail = detail;
+        self.code = options.code;
+        self.type = options.type ?? "about:blank";
+        self.title = title;
+        self.extensions = options.extensions;
+        self.headers = options.headers;
     }
 
     static badRequest(detail?: string, options?: HttpErrorOptions): HttpError {
