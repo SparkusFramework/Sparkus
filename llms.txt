@@ -85,16 +85,16 @@ Keys are environment variable names. Fields: `t.string`, `t.integer`, `t.number`
 
 ## Logging
 
-`private readonly log = inject(Logger).child("users")`, then `this.log.info("User created", { userId })`, `this.log.error("Payment failed", error)` (the second argument is an object of fields, or anything else, such as a `catch` variable, logged as `err`). In handlers prefer `ctx.log` (adds `reqId`). Levels: trace, debug, info, warn, error, fatal. One JSON object per line (`{"level":"info","time":1760000000000,"module":"users","msg":"...","userId":1}`), readable lines in a terminal.
+`private readonly log = inject(Logger).child("users")`, then `this.log.info("User created", { userId })`, `this.log.error("Payment failed", error)` (the second argument is an object of fields, or anything else, such as a `catch` variable, logged as `err`). In handlers prefer `ctx.log` (adds `reqId`). With `logger: { requestContext: true }`, every logger adds the `reqId` (and the server span's `trace_id`, `span_id`) of the request being handled, services included, across awaits (AsyncLocalStorage: about 4 % of throughput under Node, under 1 % under Bun). Levels: trace, debug, info, warn, error, fatal. One JSON object per line (`{"level":"info","time":1760000000000,"module":"users","msg":"...","userId":1}`), readable lines in a terminal.
 
-`createApp({ logger: { level, modules: { db: "debug" }, format: "json" | "pretty", requests: true, write } })`; `logger: false` for none. `LOG_LEVEL=info,db=debug` sets the levels, only when the code gives no `level` (then `modules` merge over it). Request lines use the module "http" (`modules: { http: "warn" }` silences them), Sparkus' own lines "sparkus". Default level: info (warn under NODE_ENV=test). `requests: true` logs one line per request (`msg: "GET /users/1 200"`, `method`, `path`, `route`, `status`, `ms`, `reqId`).
+`createApp({ logger: { level, modules: { db: "debug" }, format: "json" | "pretty", requests: true, requestContext: true, write } })`; `logger: false` for none. `LOG_LEVEL=info,db=debug` sets the levels, only when the code gives no `level` (then `modules` merge over it). Request lines use the module "http" (`modules: { http: "warn" }` silences them), Sparkus' own lines "sparkus". Default level: info (warn under NODE_ENV=test). `requests: true` logs one line per request (`msg: "GET /users/1 200"`, `method`, `path`, `route`, `status`, `ms`, `reqId`).
 
 ## Production options
 
 ```ts
 createApp({
     controllers,
-    logger: { requests: true },
+    logger: { requests: true, requestContext: true },   // request lines; reqId in every line logged during a request
     cors: { origin: ["https://app.example.com"], credentials: true },   // or cors: true for any origin
     securityHeaders: true,            // CSP, HSTS, nosniff, frame-options...; { "strict-transport-security": false } drops one
     requestId: true,                  // echo x-request-id in every response

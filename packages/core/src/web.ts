@@ -269,9 +269,9 @@ export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): Web
 
 /** Same as the plain handler, with the observer around it: start once routed, finish with the final status. */
 function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observer: Observer): WebHandler {
-    const { run, status, path } = route;
+    const { status, path } = route;
     const init: ResponseInit | undefined = status === 200 ? undefined : { status };
-    const activate = observer.activate;
+    const run = observer.enter(route.run);
     const base = observer.baseHeaders;
     /** The response for a value, or for the error building it threw; finished once, whatever happens. */
     const respond = (value: unknown, ctx: WebContext): Response => {
@@ -295,8 +295,7 @@ function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observ
         observer.start(ctx, path, false);
         let out: unknown;
         try {
-            const span = ctx.extras.span;
-            out = activate !== undefined && span !== undefined ? activate(span, () => run(ctx)) : run(ctx);
+            out = run(ctx);
         } catch (error) {
             return fail(error, ctx);
         }

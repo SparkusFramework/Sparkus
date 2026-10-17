@@ -1,3 +1,4 @@
+import type { RequestContext } from "./context.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 
 /** Log levels, from the most verbose. */
@@ -39,6 +40,13 @@ export interface LoggerOptions {
     format?: "json" | "pretty";
     /** One line per request: method, path, status, duration, request id. Default: false. */
     requests?: boolean;
+    /**
+     * Adds the request id (`reqId`) and the server span's `trace_id` and `span_id` (telemetry) to
+     * every line logged while a request is handled, by any logger: a service that logs with
+     * `inject(Logger)` needs no `ctx`. Uses AsyncLocalStorage around each request: about 4 % of
+     * throughput under Node 24, under 1 % under Bun. Default: false.
+     */
+    requestContext?: boolean;
     /**
      * Receives each line (without "\n"). Default: stdout (stderr when SPARKUS_LOG_STDERR=1, as the
      * CLI sets it), buffered and flushed once per event loop turn.
@@ -161,6 +169,41 @@ class StdoutSink {
 
 const stdoutSink = new StdoutSink();
 
+/** The request being handled, across awaits: an AsyncLocalStorage, the same for every app of the process. */
+export interface RequestScope {
+    getStore(): RequestContext | undefined;
+    run<R>(store: RequestContext, fn: (ctx: RequestContext) => R, ctx: RequestContext): R;
+}
+
+let scope: RequestScope | null = null;
+
+/**
+ * Creates the request scope on first use. Loaded only by apps that ask for it: `node:async_hooks`
+ * exists under Bun and Node, but `app.fetch` may run elsewhere.
+ */
+export async function requestScope(): Promise<RequestScope> {
+    if (scope === null) {
+        const { AsyncLocalStorage } = await import("node:async_hooks");
+        scope ??= new AsyncLocalStorage<RequestContext>();
+    }
+    return scope;
+}
+
+/** Trace id of a span that records nothing (OpenTelemetry's INVALID_TRACEID). */
+const NO_TRACE = "00000000000000000000000000000000";
+
+/** The server span's ids, when telemetry is on and the span has valid ones. */
+function traceIds(ctx: RequestContext): { traceId: string; spanId: string } | undefined {
+    const span = ctx.extras.span;
+    if (span?.spanContext === undefined) return undefined;
+    try {
+        const ids = span.spanContext();
+        return typeof ids.traceId === "string" && typeof ids.spanId === "string" && ids.traceId !== NO_TRACE ? ids : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 const COLORS: Record<LogLevel, string> = {
     trace: "\x1b[90m",
     debug: "\x1b[36m",
@@ -191,6 +234,7 @@ class LogRoot {
     readonly color: boolean;
     readonly write: (line: string) => void;
     readonly requests: boolean;
+    readonly requestContext: boolean;
 
     constructor(options: LoggerOptions) {
         const fromEnv = options.level === undefined ? env("LOG_LEVEL") : undefined;
@@ -215,6 +259,7 @@ class LogRoot {
         this.color = this.pretty && options.write === undefined && tty && env("NO_COLOR") === undefined;
         this.write = options.write ?? stdoutSink.write;
         this.requests = options.requests === true;
+        this.requestContext = options.requestContext === true;
     }
 
     rankOf(module: string | undefined): number {
@@ -235,7 +280,8 @@ class LogRoot {
  *     this.log.info("User created", { userId: user.id });
  *     this.log.error("Payment failed", error);
  *
- * In a handler, `ctx.log` adds the request id to every line. Levels are fixed per module when
+ * In a handler, `ctx.log` adds the request id to every line; with `requestContext: true`, every
+ * logger does while a request is handled. Levels are fixed per module when
  * the child is created, so a disabled call costs one comparison.
  */
 export class Logger {
@@ -246,6 +292,10 @@ export class Logger {
     /** JSON of the module and bound fields: `,"module":"users","reqId":"..."`. */
     private readonly bound: string;
     private readonly fields: Readonly<Record<string, unknown>> | undefined;
+    /** True when the request context adds fields to its lines (`requestContext`). */
+    private readonly scoped: boolean;
+    /** True when its bound fields already name the request (`ctx.log`). */
+    private readonly ownId: boolean;
 
     /** `new Logger({ write })` captures lines in tests. The second parameter is internal (children). */
     constructor(options: LoggerOptions = {}, parent?: { root: LogRoot; module: string | undefined; fields?: Readonly<Record<string, unknown>> }) {
@@ -254,6 +304,8 @@ export class Logger {
         this.fields = parent?.fields;
         this.min = this.root.rankOf(this.module);
         this.bound = (this.module === undefined ? "" : `,"module":${JSON.stringify(this.module)}`) + fieldsJson(this.fields);
+        this.scoped = this.root.requestContext;
+        this.ownId = this.fields?.reqId !== undefined;
     }
 
     /** A logger for a module: its name appears in each line and selects its level. Nested names join with ".". */
@@ -304,6 +356,11 @@ export class Logger {
         return this.root.requests;
     }
 
+    /** True when lines carry the id of the request being handled (`requestContext`). */
+    get logsRequestContext(): boolean {
+        return this.root.requestContext;
+    }
+
     /** Writes what the default stdout output still buffers. Sparkus calls it on shutdown and exit. */
     static flush(): void {
         stdoutSink.flush();
@@ -318,7 +375,7 @@ export class Logger {
         try {
             this.root.write(
                 this.root.pretty
-                    ? this.prettyLine(level, msg, fields())
+                    ? this.prettyLine(level, msg, fields(), undefined)
                     : `{"level":"${level}","time":${Date.now()}${this.bound},"msg":"${msg}"${json}}`,
             );
         } catch {
@@ -329,24 +386,51 @@ export class Logger {
     private emit(level: LogLevel, msg: string, fields: LogFields | undefined): void {
         const text = typeof msg === "string" ? msg : String(msg);
         try {
-            this.root.write(
-                this.root.pretty
-                    ? this.prettyLine(level, text, fields)
-                    : `{"level":"${level}","time":${Date.now()}${this.bound},"msg":${JSON.stringify(text)}${fieldsJson(fields)}}`,
-            );
+            const ctx = this.scoped ? scope?.getStore() : undefined;
+            if (this.root.pretty) this.root.write(this.prettyLine(level, text, fields, ctx));
+            else {
+                const request = ctx === undefined ? "" : this.requestJson(ctx, fields);
+                this.root.write(
+                    `{"level":"${level}","time":${Date.now()}${this.bound}${request},"msg":${JSON.stringify(text)}${fieldsJson(fields)}}`,
+                );
+            }
         } catch {
             // Logging never breaks the request that logs.
         }
     }
 
-    private prettyLine(level: LogLevel, msg: string, fields: LogFields | undefined): string {
+    /** True when the line names its request already: `ctx.log`, or a `reqId` field. */
+    private named(fields: LogFields | undefined): boolean {
+        return this.ownId || (isFieldObject(fields) && fields.reqId !== undefined);
+    }
+
+    /** `,"reqId":"...","trace_id":"...","span_id":"..."` for a line logged while `ctx` is handled. */
+    private requestJson(ctx: RequestContext, fields: LogFields | undefined): string {
+        // Request ids are safe tokens (validated or generated): no escaping.
+        let out = this.named(fields) ? "" : `,"reqId":"${ctx.requestId}"`;
+        const ids = traceIds(ctx);
+        if (ids !== undefined) out += `,"trace_id":${JSON.stringify(ids.traceId)},"span_id":${JSON.stringify(ids.spanId)}`;
+        return out;
+    }
+
+    private prettyLine(level: LogLevel, msg: string, fields: LogFields | undefined, ctx: RequestContext | undefined): string {
         const { color } = this.root;
         const tag = level.toUpperCase().padEnd(5);
         let line = `${time(new Date())} ${color ? `${COLORS[level]}${tag}\x1b[0m` : tag}`;
         if (this.module !== undefined) line += color ? ` \x1b[1m${this.module}\x1b[0m` : ` ${this.module}`;
         line += ` ${msg}`;
+        let request: Record<string, unknown> | undefined;
+        if (ctx !== undefined) {
+            request = this.named(fields) ? {} : { reqId: ctx.requestId };
+            const ids = traceIds(ctx);
+            if (ids !== undefined) {
+                request.trace_id = ids.traceId;
+                request.span_id = ids.spanId;
+            }
+        }
         const all: Record<string, unknown> = {
             ...this.fields,
+            ...request,
             ...(fields === undefined ? undefined : isFieldObject(fields) ? fields : { err: fields }),
         };
         let stack = "";

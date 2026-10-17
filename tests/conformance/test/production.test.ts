@@ -302,6 +302,50 @@ for (const [label, start] of targets) {
                 expect(own).toMatchObject({ level: "info", id: 5 });
             });
 
+            describe("request context", () => {
+                const probe = () => ++unique;
+                const lines = (res: Reply) => (res.json().lines as string[]).map((line) => ({ raw: line, ...JSON.parse(line) }));
+
+                test("a service's lines carry the request id and the span's ids, across awaits, without ctx", async () => {
+                    const reqId = id(label);
+                    const n = probe();
+                    const res = await target.request(`/ops/context?probe=${n}&wait=5`, { headers: { "x-request-id": reqId } });
+                    expect(res.status).toBe(200);
+                    const logged = lines(res).filter((line) => line.probe === n);
+                    expect(logged.map((line) => line.msg)).toEqual(["Catalog find", "Context handler"]);
+                    const [service, handler] = logged;
+                    expect(service).toMatchObject({ module: "catalog", reqId, probe: n });
+                    expect(service.trace_id).toMatch(/^[0-9a-f]{32}$/);
+                    expect(service.span_id).toMatch(/^[0-9a-f]{16}$/);
+                    // ctx.log names the request already: one reqId, and the same span.
+                    expect(handler).toMatchObject({ reqId, trace_id: service.trace_id, span_id: service.span_id });
+                    expect(handler.raw.split('"reqId"').length).toBe(2);
+                });
+
+                test("concurrent requests each keep their own context", async () => {
+                    const [slow, fast] = [probe(), probe()];
+                    const [a, b] = [id(label), id(label)];
+                    // The slow one logs after the fast one has started and finished.
+                    const [slowRes, fastRes] = await Promise.all([
+                        target.request(`/ops/context?probe=${slow}&wait=40`, { headers: { "x-request-id": a } }),
+                        target.request(`/ops/context?probe=${fast}&wait=1`, { headers: { "x-request-id": b } }),
+                    ]);
+                    const slowLine = lines(slowRes).find((line) => line.probe === slow && line.module === "catalog");
+                    const fastLine = lines(fastRes).find((line) => line.probe === fast && line.module === "catalog");
+                    expect(slowLine.reqId).toBe(a);
+                    expect(fastLine.reqId).toBe(b);
+                    expect(slowLine.trace_id).not.toBe(fastLine.trace_id);
+                });
+
+                test("lines logged outside a request have none", async () => {
+                    const res = await target.request(`/ops/context?probe=${probe()}`);
+                    const ready = lines(res).find((line) => line.msg === "Catalog ready");
+                    expect(ready).toMatchObject({ level: "info", module: "catalog" });
+                    expect(ready.reqId).toBeUndefined();
+                    expect(ready.trace_id).toBeUndefined();
+                });
+            });
+
             test("unrouted requests are logged without a route", async () => {
                 if (!target.local) return;
                 const reqId = id(label);

@@ -3,7 +3,7 @@ import type { HttpMethod } from "./context.js";
 import { Container, type Class, type Provider, type Token } from "./di.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import { healthRoutes, type HealthOptions } from "./health.js";
-import { Logger, type LoggerOptions } from "./log.js";
+import { Logger, requestScope, type LoggerOptions } from "./log.js";
 import { Observer, type CorsOptions, type TelemetryOptions } from "./observe.js";
 import type { GuardLike, InterceptorLike } from "./pipeline.js";
 import { generateOpenApi, type OpenApiOptions } from "./openapi.js";
@@ -226,6 +226,8 @@ export class SparkusApp {
             securityHeaders: security === true ? {} : security === false ? undefined : security,
             echoRequestId: requestId === undefined || requestId === false ? null : requestIdHeader,
             telemetry: options.telemetry,
+            // Loaded only when asked for: nothing on the request path otherwise (D13).
+            scope: log.logsRequestContext ? await requestScope() : null,
         };
 
         const runtime: AppRuntime = new AppRuntime(routes, {

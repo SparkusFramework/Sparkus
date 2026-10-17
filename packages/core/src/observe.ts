@@ -5,7 +5,8 @@
  */
 import type { Ctx, RequestContext } from "./context.js";
 import { ErrorCode, SparkusError } from "./errors.js";
-import type { Logger } from "./log.js";
+import type { Logger, RequestScope } from "./log.js";
+import type { Run } from "./pipeline.js";
 
 /** Attribute values, exactly as OpenTelemetry defines them (so its types and these are interchangeable). */
 export type AttributeValue =
@@ -26,6 +27,8 @@ export interface Span {
     setStatus(status: { code: number; message?: string }): unknown;
     recordException(exception: unknown): void;
     end(): void;
+    /** Its ids, added to log lines with the logger's `requestContext` option. */
+    spanContext?(): { traceId: string; spanId: string };
 }
 
 /** The part of an OpenTelemetry tracer Sparkus uses: `trace.getTracer("api")` fits. */
@@ -107,6 +110,8 @@ export interface ObserverOptions {
     /** Header the request id is echoed in, or null. */
     echoRequestId: string | null;
     telemetry: TelemetryOptions | undefined;
+    /** Where the request being handled is kept across awaits (logger's `requestContext`), or null. */
+    scope: RequestScope | null;
 }
 
 /** A response with no body: CORS preflights. */
@@ -164,7 +169,8 @@ export class Observer {
     private readonly errors: Logger;
     private readonly tracer: Tracer | undefined;
     private readonly extract: TelemetryOptions["extract"];
-    readonly activate: TelemetryOptions["activate"];
+    private readonly activate: TelemetryOptions["activate"];
+    private readonly scope: RequestScope | null;
     private readonly duration: Histogram | undefined;
     /** True when the start time is needed (logs or metrics). */
     private readonly timed: boolean;
@@ -212,6 +218,7 @@ export class Observer {
         this.tracer = telemetry.tracer;
         this.extract = telemetry.extract;
         this.activate = telemetry.tracer === undefined ? undefined : telemetry.activate;
+        this.scope = options.scope;
         this.duration = telemetry.meter?.createHistogram("http.server.request.duration", {
             description: "Duration of HTTP server requests.",
             unit: "s",
@@ -229,8 +236,24 @@ export class Observer {
             options.securityHeaders !== undefined ||
             options.echoRequestId !== null ||
             telemetry?.tracer !== undefined ||
-            telemetry?.meter !== undefined
+            telemetry?.meter !== undefined ||
+            options.scope !== null
         );
+    }
+
+    /**
+     * A route's pipeline as engines call it: inside the server span's context (`activate`) and the
+     * request scope, when asked for. Built once per route; the route's own `run` when neither is.
+     */
+    enter(run: Run): Run {
+        const scope = this.scope;
+        const scoped: Run = scope === null ? run : (ctx) => scope.run(ctx, run, ctx);
+        const activate = this.activate;
+        if (activate === undefined) return scoped;
+        return (ctx) => {
+            const span = ctx.extras.span;
+            return span === undefined ? scoped(ctx) : activate(span, () => scoped(ctx));
+        };
     }
 
     /**

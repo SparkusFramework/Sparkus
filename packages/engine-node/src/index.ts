@@ -235,9 +235,9 @@ function send(res: ServerResponse, ctx: NodeContext, value: unknown, runtime: Ap
 }
 
 /** Runs the pipeline and sends what it gives, or the error it throws. */
-function dispatch(res: ServerResponse, ctx: NodeContext, runtime: AppRuntime, run: () => unknown): void {
+function dispatch(res: ServerResponse, ctx: NodeContext, runtime: AppRuntime, run: CompiledRoute["run"]): void {
     try {
-        const out = run();
+        const out = run(ctx);
         if (out instanceof Promise) {
             out.then(
                 (value) => {
@@ -287,16 +287,15 @@ function createHandler(route: CompiledRoute, runtime: AppRuntime): NodeHandler {
 
 /** Same as the plain handler, observed: start once routed, finish when the response is done (or cut). */
 function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observer: Observer): NodeHandler {
-    const { run, status, path: routePath } = route;
-    const activate = observer.activate;
+    const { status, path: routePath } = route;
+    const run = observer.enter(route.run);
 
     return (req, res, params, path, rawQuery) => {
         const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
         observer.start(ctx, routePath, true);
         // Closed before a response (client gone, forced shutdown): 499, as nginx logs it.
         res.once("close", () => observer.finish(ctx, res.headersSent ? res.statusCode : 499, routePath));
-        const span = ctx.extras.span;
-        dispatch(res, ctx, runtime, activate !== undefined && span !== undefined ? () => activate(span, () => run(ctx)) : () => run(ctx));
+        dispatch(res, ctx, runtime, run);
     };
 }
 

@@ -118,7 +118,19 @@ Décomposition sous Bun avant optimisation (`hello`) : logs −15,1 %, headers d
 
 Reporté :
 
-- Propagation automatique du contexte (request id et span dans les logs des services, sans passer `ctx`) : demande `AsyncLocalStorage`, à mesurer avant d'en faire une option.
+- ~~Propagation automatique du contexte~~ : **livrée en option, désactivée par défaut**, `logger: { requestContext: true }`. Toute ligne journalisée pendant une requête, par n'importe quel logger (`inject(Logger)` dans un service, à travers les `await`), porte `reqId` et, avec la télémétrie, `trace_id` / `span_id` du span serveur (pas le span actif le plus interne : Sparkus ne lit pas le contexte OpenTelemetry). `ctx.log` et un champ `reqId` explicite ne sont pas doublés ; les lignes hors requête n'ont rien. `node:async_hooks` n'est importé (dynamiquement) que si l'option est active ; elle met l'app sur le chemin observé, chaque route y est enveloppée une fois au démarrage (`Observer.enter`), le chemin nu est inchangé (D13). Conformité : 3 cas × 4 cibles (service après `await`, requêtes concurrentes, ligne hors requête) et le vrai SDK OpenTelemetry (ids du span serveur dans les lignes).
+  - Micro-bench (`bench/micro/als.js`) : `als.run()` autour d'un handler sync coûte **17 ns sous Bun 1.4.3, 150 ns sous Node 24.22** (2 et 1,6 ns sans) ; `getStore()` 5 à 8 ns ; une fois l'ALS créé, les requêtes hors `run()` ne paient rien.
+  - A/B HTTP (`bench/compare.ts`, 5 rounds, même session, [rapport](bench/reference/2026-10-17-als-request-context.md)) :
+
+    | | `hello` | `params-query` | `post-validate` |
+    |---|---:|---:|---:|
+    | Bun, option seule vs aucune option | −1,1 % ≈ | −0,4 % ≈ | −0,8 % (prouvé) |
+    | Bun, production + option vs production | −0,1 % ≈ | −0,9 % (prouvé) | −0,6 % ≈ |
+    | Node, option seule vs aucune option | **−3,8 %** | **−4,7 %** | **−3,2 %** |
+    | Node, production + option vs production | **−4,0 %** | **−3,1 %** | **−4,2 %** |
+
+    Sous Node, tout est prouvé, CPU par requête compris : ~0,7 µs par requête, 5 fois le micro-bench (sous Node 24, `run()` alloue deux frames `AsyncContextFrame` par requête). Variante essayée et écartée : `enterWith(ctx)` sans restauration (une frame au lieu de deux, bornée par le callback du socket) : ≈ contre `run()` (+1,0 à +1,7 % en médiane, rounds en désaccord), et des lignes risquaient d'hériter d'une requête terminée.
+  - Décision : gardée parce qu'elle est optionnelle (D13), qu'elle ne coûte presque rien sous Bun (moteur par défaut, D1), et que sous Node 4 % restent loin du logger de Fastify (−38 %) pour ce qu'elle apporte : plus de `ctx` à faire descendre dans les services. Pas activée dans le template `init`.
 - Redaction de champs sensibles dans les logs, compression, rate limiting : hors périmètre de cette phase.
 - Chiffres Linux (D8) de la phase 3.
 

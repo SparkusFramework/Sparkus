@@ -194,6 +194,21 @@ describe("review fixes", () => {
         expect((app as any).runtime.observer).toBeNull();
     });
 
+    test("request context: pretty lines too, and the plain path when it is off", async () => {
+        const lines: string[] = [];
+        const app = createApp({
+            controllers: [Hello],
+            logger: { level: "info", format: "pretty", requestContext: true, write: (line) => void lines.push(line) },
+        });
+        await app.init();
+        await app.fetch(new Request("http://x/", { headers: { "x-request-id": "pretty-1" } }));
+        expect(lines.find((line) => line.includes("Said hello"))).toEndWith("hello Said hello reqId=pretty-1");
+
+        const off = createApp({ controllers: [Hello], logger: { level: "info", write: () => {} } });
+        await off.init();
+        expect((off as any).runtime.observer).toBeNull();
+    });
+
     test("default and t.optional() together are refused in a body", async () => {
         const Body = { body: t.object({ n: t.optional(t.integer({ default: 1 })) }) };
         @Controller()

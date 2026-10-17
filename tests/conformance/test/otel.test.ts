@@ -6,7 +6,7 @@ import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { AggregationTemporality, InMemoryMetricExporter, MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { Controller, Get, createApp, type Ctx, type SparkusApp } from "sparkus";
+import { Controller, Get, Logger, createApp, inject, type Ctx, type SparkusApp } from "sparkus";
 
 const spans = new InMemorySpanExporter();
 const tracerProvider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(spans)] });
@@ -14,15 +14,19 @@ const metricsOut = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE)
 const reader = new PeriodicExportingMetricReader({ exporter: metricsOut, exportIntervalMillis: 3_600_000 });
 const meterProvider = new MeterProvider({ readers: [reader] });
 const db = tracerProvider.getTracer("db");
+const lines: Array<Record<string, any>> = [];
 
 @Controller("/orders")
 class OrderController {
+    private readonly log = inject(Logger).child("orders");
+
     @Get("/:id")
     async get(ctx: Ctx) {
         // A span started by app code becomes a child of the request's span, across an await.
         await Bun.sleep(1);
         const query = db.startSpan("SELECT orders");
         query.end();
+        this.log.info("Order read", { order: ctx.params.id });
         return { id: ctx.params.id };
     }
 
@@ -45,7 +49,7 @@ for (const engine of ["memory", "bun", "node"] as const) {
             propagation.setGlobalPropagator(new W3CTraceContextPropagator());
             app = createApp({
                 controllers: [OrderController],
-                logger: false,
+                logger: { level: "info", format: "json", requestContext: true, write: (line) => void lines.push(JSON.parse(line)) },
                 engine: engine === "memory" ? "auto" : engine,
                 telemetry: {
                     tracer: tracerProvider.getTracer("api"),
@@ -84,6 +88,17 @@ for (const engine of ["memory", "bun", "node"] as const) {
             });
             expect(query.spanContext().traceId).toBe(TRACE_ID);
             expect(query.parentSpanContext?.spanId).toBe(server.spanContext().spanId);
+        });
+
+        test("requestContext: lines logged during the request carry the server span's ids", async () => {
+            spans.reset();
+            const order = `${engine}-1`;
+            await request(`/orders/${order}`, { traceparent: `00-${TRACE_ID}-${PARENT_ID}-01` });
+            const server = spans.getFinishedSpans().find((span) => span.name === "GET /orders/:id")!;
+            const line = lines.find((l) => l.order === order)!;
+            expect(line.trace_id).toBe(TRACE_ID);
+            expect(line.span_id).toBe(server.spanContext().spanId);
+            expect(line.reqId).toBeString();
         });
 
         test("a 500 is an error span with the exception event", async () => {

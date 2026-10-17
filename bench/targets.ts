@@ -46,6 +46,24 @@ export const extraTargets: Target[] = [
             env: { SPARKUS_BENCH_OPTIONS: option },
         }),
     ),
+    // Request context in log lines (AsyncLocalStorage around each request): alone, against
+    // sparkus-bun / sparkus-node, and on top of the production profile, against sparkus-prod-*.
+    ...(["bun", "node"] as const).flatMap((runtime): Target[] => [
+        {
+            name: `sparkus-context-${runtime}`,
+            runtime,
+            entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+            role: "sparkus",
+            env: { SPARKUS_BENCH_OPTIONS: "context" },
+        },
+        {
+            name: `sparkus-prodctx-${runtime}`,
+            runtime,
+            entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+            role: "sparkus",
+            env: { SPARKUS_BENCH_PROFILE: "production", SPARKUS_BENCH_OPTIONS: "context" },
+        },
+    ]),
     // Fastify with its logger (pino, one line at the start and one at the end of each request).
     { name: "fastify-logger", runtime: "node", entry: "targets/fastify/server.js", role: "competitor", env: { FASTIFY_LOGGER: "1" } },
 ];
