@@ -174,6 +174,8 @@ export class Observer {
     private readonly duration: Histogram | undefined;
     /** True when the start time is needed (logs or metrics). */
     private readonly timed: boolean;
+    /** True when finish() has work: request logs, metrics or spans. Headers-only observers do not. */
+    readonly finishes: boolean;
 
     constructor(options: ObserverOptions) {
         const base: Record<string, string> = {};
@@ -225,6 +227,7 @@ export class Observer {
             advice: { explicitBucketBoundaries: DURATION_BUCKETS },
         });
         this.timed = this.http !== null || this.duration !== undefined;
+        this.finishes = this.timed || this.tracer !== undefined;
     }
 
     /** True when the options ask for anything at all. */

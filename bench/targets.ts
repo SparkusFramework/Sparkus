@@ -36,15 +36,17 @@ export const extraTargets: Target[] = [
     // what they cost, measured against sparkus-bun / sparkus-node in the same session.
     { name: "sparkus-prod-bun", runtime: "bun", entry: "targets/sparkus/server.ts", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
     { name: "sparkus-prod-node", runtime: "node", entry: "targets/sparkus/dist/server.js", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
-    // One production option at a time (Bun), to see what each costs.
-    ...["logs", "security", "requestid", "cors"].map(
-        (option): Target => ({
-            name: `sparkus-${option}-bun`,
-            runtime: "bun",
-            entry: "targets/sparkus/server.ts",
-            role: "sparkus",
-            env: { SPARKUS_BENCH_OPTIONS: option },
-        }),
+    // One production option at a time, to see what each costs.
+    ...(["bun", "node"] as const).flatMap((runtime) =>
+        ["logs", "security", "requestid", "cors"].map(
+            (option): Target => ({
+                name: `sparkus-${option}-${runtime}`,
+                runtime,
+                entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+                role: "sparkus",
+                env: { SPARKUS_BENCH_OPTIONS: option },
+            }),
+        ),
     ),
     // Request context in log lines (AsyncLocalStorage around each request): alone, against
     // sparkus-bun / sparkus-node, and on top of the production profile, against sparkus-prod-*.

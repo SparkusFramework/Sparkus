@@ -99,8 +99,7 @@ class NodeContext implements RequestContext {
     }
 
     header(name: string): string | undefined {
-        const value = this.req.headers[name.toLowerCase()];
-        return typeof value === "string" ? value : value === undefined ? undefined : value.join(", ");
+        return readHeader(this.req, name.toLowerCase());
     }
 
     setHeader(name: string, value: string): void {
@@ -109,9 +108,9 @@ class NodeContext implements RequestContext {
 
     readBody(limit: number): Promise<unknown> {
         const req = this.req;
-        const type = req.headers["content-type"];
+        const type = readHeader(req, "content-type");
         if (!isJsonContentType(type)) return Promise.reject(unsupportedMediaType(type));
-        const declared = req.headers["content-length"];
+        const declared = readHeader(req, "content-length");
         if (declared !== undefined && Number(declared) > limit) return Promise.reject(payloadTooLarge(limit));
 
         return new Promise((resolve, reject) => {
@@ -144,6 +143,26 @@ class NodeContext implements RequestContext {
             req.on("error", reject);
         });
     }
+}
+
+/**
+ * A request header by lowercase name, read from `rawHeaders`. Node builds `req.headers` on first
+ * access, every header at once: a request that reads one header (an id, an origin, a token)
+ * would pay for all of them. A repeated header falls back to Node's own joining rules.
+ */
+function readHeader(req: IncomingMessage, name: string): string | undefined {
+    const raw = req.rawHeaders;
+    let found: string | undefined;
+    for (let i = 0; i < raw.length; i += 2) {
+        const key = raw[i]!;
+        if (key.length !== name.length || (key !== name && key.toLowerCase() !== name)) continue;
+        if (found !== undefined) {
+            const value = req.headers[name];
+            return typeof value === "string" ? value : value?.join(", ");
+        }
+        found = raw[i + 1];
+    }
+    return found;
 }
 
 /** Sends a problem+json response. Headers set on the context come along; the error's own win. */
@@ -289,12 +308,14 @@ function createHandler(route: CompiledRoute, runtime: AppRuntime): NodeHandler {
 function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observer: Observer): NodeHandler {
     const { status, path: routePath } = route;
     const run = observer.enter(route.run);
+    const finishes = observer.finishes;
 
     return (req, res, params, path, rawQuery) => {
         const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
         observer.start(ctx, routePath, true);
-        // Closed before a response (client gone, forced shutdown): 499, as nginx logs it.
-        res.once("close", () => observer.finish(ctx, res.headersSent ? res.statusCode : 499, routePath));
+        // Closed before a response (client gone, forced shutdown): 499, as nginx logs it. "close" fires
+        // once: on() spares the wrapper once() allocates. Headers-only observers have nothing to finish.
+        if (finishes) res.on("close", () => observer.finish(ctx, res.headersSent ? res.statusCode : 499, routePath));
         dispatch(res, ctx, runtime, run);
     };
 }
