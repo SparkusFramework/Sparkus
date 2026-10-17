@@ -25,3 +25,9 @@ export const targets: Target[] = [
     { name: "nest-fastify", runtime: "node", entry: "targets/nest/dist/fastify.js", role: "competitor" },
     { name: "nest-express", runtime: "node", entry: "targets/nest/dist/express.js", role: "competitor" },
 ];
+
+/** Run only when named with --targets: guards and interceptors, for the "pipe-*" scenarios. */
+export const extraTargets: Target[] = [
+    { name: "sparkus-pipeline-bun", runtime: "bun", entry: "targets/sparkus-pipeline/server.ts", role: "sparkus" },
+    { name: "sparkus-pipeline-node", runtime: "node", entry: "targets/sparkus-pipeline/dist/server.js", role: "sparkus" },
+];

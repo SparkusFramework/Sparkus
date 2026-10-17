@@ -5,7 +5,7 @@
     "description": "Reproducible HTTP benchmark: Sparkus vs NestJS, Fastify, Express, Elysia, Hono and raw servers.",
     "type": "module",
     "scripts": {
-        "build": "bun run --cwd .. build && bun run --cwd ../spike build && tsc -p targets/sparkus/tsconfig.json && tsc -p targets/spike/tsconfig.json && tsc -p targets/nest/tsconfig.json",
+        "build": "bun run --cwd .. build && bun run --cwd ../spike build && tsc -p targets/sparkus/tsconfig.json && tsc -p targets/sparkus-pipeline/tsconfig.json && tsc -p targets/spike/tsconfig.json && tsc -p targets/nest/tsconfig.json",
         "bench": "bun run build && bun run.ts"
     },
     "dependencies": {

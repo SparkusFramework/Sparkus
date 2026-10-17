@@ -18,10 +18,10 @@
  * "<target>@<ref>" twin for every selected Sparkus target: an A/B session.
  * NODE_BIN selects the Node binary used for Node targets and for autocannon.
  */
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { invalidBody, scenarios as allScenarios, type Scenario } from "./scenarios.ts";
+import { extraScenarios, invalidBody, scenarios as allScenarios, type Scenario } from "./scenarios.ts";
 import {
     acquireMachineLock,
     cpuLayout,
@@ -31,7 +31,7 @@ import {
     setAffinity,
     SystemSampler,
 } from "./system.ts";
-import { targets as allTargets, type Target } from "./targets.ts";
+import { extraTargets, targets as allTargets, type Target } from "./targets.ts";
 
 const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i]!.replace(/^--/, ""), process.argv[i + 1]!);
@@ -55,8 +55,9 @@ function parseCpuList(list: string | undefined): number[] | undefined {
     });
 }
 const config = {
-    targets: pick(allTargets, "targets"),
-    scenarios: pick(allScenarios, "scenarios"),
+    // Extra targets and scenarios run only when named.
+    targets: args.has("targets") ? pick([...allTargets, ...extraTargets], "targets") : allTargets,
+    scenarios: args.has("scenarios") ? pick([...allScenarios, ...extraScenarios], "scenarios") : allScenarios,
     rounds: Number(args.get("rounds") ?? args.get("runs") ?? (baselineRef ? 5 : 3)),
     duration: Number(args.get("duration") ?? 10),
     warmup: Number(args.get("warmup") ?? 3),
@@ -125,10 +126,29 @@ function prepareBaseline(ref: string): string {
     }
     const tsc = join(dir, "node_modules/typescript/bin/tsc");
     step(dir, [process.execPath, "install"]);
-    step(dir, [process.execPath, tsc, "-b"]);
+    // Since the bundled build, packages' dist comes from scripts/build.ts, not from tsc.
+    if (existsSync(join(dir, "scripts/build.ts"))) step(dir, [process.execPath, join(dir, "scripts/build.ts")]);
+    else step(dir, [process.execPath, tsc, "-b"]);
     step(bench, [process.execPath, tsc, "-p", "targets/sparkus/tsconfig.json"]);
     writeFileSync(done, sha);
     return bench;
+}
+
+/**
+ * A Sparkus target newer than the baseline (e.g. sparkus-pipeline) is the same app on
+ * both sides: its sources are copied from the working tree into the baseline and built there.
+ */
+function ensureBaselineTarget(baseDir: string, target: Target): void {
+    if (existsSync(join(baseDir, target.entry))) return;
+    const folder = target.entry.split("/").slice(0, 2).join("/");
+    cpSync(join(benchDir, folder), join(baseDir, folder), {
+        recursive: true,
+        filter: (source) => !source.includes("dist"),
+    });
+    if (existsSync(join(baseDir, folder, "tsconfig.json"))) {
+        const tsc = join(baseDir, "../node_modules/typescript/bin/tsc");
+        step(baseDir, [process.execPath, tsc, "-p", `${folder}/tsconfig.json`]);
+    }
 }
 
 const runs: Run[] = config.targets.map((t) => ({ ...t, dir: benchDir }));
@@ -136,6 +156,7 @@ if (config.baseline) {
     const baseDir = prepareBaseline(config.baseline);
     const sparkus = runs.filter((t) => t.role === "sparkus");
     if (sparkus.length === 0) throw new Error("--baseline needs at least one Sparkus target (sparkus-bun, sparkus-node).");
+    for (const t of sparkus) ensureBaselineTarget(baseDir, t);
     for (const t of sparkus) runs.push({ ...t, name: `${t.name}@${config.baseline}`, dir: baseDir, twinOf: t.name });
 }
 
@@ -264,7 +285,9 @@ async function checkContract(target: Run, base: string, scenarios: Scenario[]) {
         try {
             body = JSON.parse(text);
         } catch {}
-        if (res.status !== s.expect.status || !Bun.deepEquals(body, s.expect.body) || !type.includes("application/json")) {
+        const statusOk = (s.expect.statuses ?? [s.expect.status]).includes(res.status);
+        const bodyOk = s.expect.body === undefined || Bun.deepEquals(body, s.expect.body);
+        if (!statusOk || !bodyOk || !type.includes(s.expect.contentType ?? "application/json")) {
             throw new Error(
                 `${target.name} breaks the contract of "${s.name}": got ${res.status} ${type} ${text}, ` +
                     `expected ${s.expect.status} ${JSON.stringify(s.expect.body)}`,
