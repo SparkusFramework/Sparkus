@@ -3,6 +3,7 @@
     <h1>Sparkus ✨</h1>
     <p><strong>The fastest decorator + dependency injection backend framework for TypeScript.</strong><br>
     Runs on Bun and Node. Zero runtime dependencies. Built to be written by humans and AI agents.</p>
+    <p><sub>Sponsored by <a href="https://nemuria.com">Nemuria</a></sub></p>
 </div>
 
 > **Status: v1 in development (alpha).** The API may still change. See [ROADMAP.md](./ROADMAP.md).
@@ -102,6 +103,17 @@ bun run test
 ```
 
 `bun run test` builds every package with `bun build`, then runs unit tests and the conformance suite on four targets (in memory, Bun engine, Node engine under Bun, a real Node process; set `NODE_BIN` to pick the Node binary). `bun run typecheck` checks sources and tests with `bun check`, `bun run check:deps` enforces zero runtime dependencies, and `bun run bench` runs the [benchmark](./bench/README.md).
+
+## Sponsors
+
+Sparkus is sponsored by [Nemuria](https://nemuria.com).
+
+<a href="https://nemuria.com">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./.github/sponsors/nemuria-white.svg">
+        <img src="./.github/sponsors/nemuria.svg" alt="Nemuria" width="200">
+    </picture>
+</a>
 
 ## License
 
