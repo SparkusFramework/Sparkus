@@ -112,6 +112,7 @@ In memory, full pipeline, no port. `createTestApp` takes the same options as `cr
 - `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`. `warnings` lists controllers in `*.controller.ts` files that serve no route (missing from `controllers`).
 - `sparkus routes [entry] --json`: list routes.
 - `sparkus openapi [entry]`: print the OpenAPI 3.1 document.
+- `sparkus client [entry] --out src/client.ts`: generate a typed client (one file, no dependency): `const api = createClient({ baseUrl })`, then `await api.user.get({ params: { id: 42 } })` (group = controller name without `Controller`, method = handler name; input `{ params, query, body }`, second argument `{ headers, signal }`). Return types come from `response` schemas (`unknown` without one). Non-2xx responses throw `ApiError` (`status`, `code`, `problem`). In tests, pass `fetch: (request) => app.fetch(request)`. Run it again after changing a route.
 - `sparkus dev [entry]`: run and restart on changes under src/.
 
 The entry exports the app (`export default app`), `src/app.ts` by default.

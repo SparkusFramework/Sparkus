@@ -78,6 +78,7 @@ Creates a project ready for humans and agents: an example feature with its tests
 | `sparkus check [entry]` | Wires the app (DI, routes, schemas) without listening; prints the first error with its code. |
 | `sparkus routes [entry]` | Lists the routes. |
 | `sparkus openapi [entry]` | Prints the OpenAPI 3.1 document generated from the route schemas (also `app.openapi()`). |
+| `sparkus client [entry] --out src/client.ts` | Generates a typed client from the route schemas: one file, no dependency. `createClient({ baseUrl }).user.get({ params: { id: 42 } })` returns the response schema's type; errors throw `ApiError` with the problem details. |
 
 ## Testing an app
 
