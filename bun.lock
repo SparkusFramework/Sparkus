@@ -100,6 +100,9 @@
         "@sparkus/testing": "workspace:*",
         "sparkus": "workspace:*",
       },
+      "devDependencies": {
+        "zod": "^4.0.0",
+      },
     },
   },
   "packages": {

@@ -1,8 +1,7 @@
 import type { Ctx, RequestContext } from "./context.js";
 import type { Class, Container } from "./di.js";
 import { ErrorCode, HttpError, SparkusError, guardRejected } from "./errors.js";
-import type { Coercer } from "./coerce.js";
-import type { Issue, Parser, Projector } from "./schema.js";
+import type { Issue } from "./schema.js";
 
 /** A guard lets a request through by returning `true`. Anything else answers 403. */
 export type GuardFn = (ctx: Ctx<any>) => boolean | Promise<boolean>;
@@ -94,15 +93,23 @@ export interface PipelineParts {
     guards: readonly GuardFn[];
     interceptors: readonly InterceptorFn[];
     /** Validates the JSON body and keeps its declared fields (route `body` schema). Null: the body is not read. */
-    parseBody: Parser | null;
+    parseBody: Step | null;
     bodyLimit: number;
-    /** Reduces the handler's value to its declared fields (route `response` schema). */
-    project: Projector | null;
+    /** Reduces the handler's value to its declared fields (route `response` schema). May return a promise. */
+    project: Step | null;
     /** Converts and validates path parameters (route `params` schema). */
-    coerceParams: Coercer | null;
+    coerceParams: Step | null;
     /** Converts and validates query parameters (route `query` schema). */
-    coerceQuery: Coercer | null;
+    coerceQuery: Step | null;
+    /**
+     * True when a body, params or query step may return a promise (a Standard Schema validates
+     * asynchronously). `t` schemas never do, and keep stages without the extra check.
+     */
+    asyncInput: boolean;
 }
+
+/** One schema stage: takes the raw value, returns the checked one (or a promise of it), throws on invalid input. */
+export type Step = (value: any) => any;
 
 /**
  * Builds the function that runs a route, from the inside out:
@@ -129,11 +136,20 @@ export function composePipeline(parts: PipelineParts): Run {
         const parse = parts.parseBody;
         const next = run;
         const limit = parts.bodyLimit;
-        run = (ctx) =>
-            ctx.readBody(limit).then((body) => {
-                ctx.body = parse(body);
-                return next(ctx);
-            });
+        run = parts.asyncInput
+            ? (ctx) =>
+                  ctx
+                      .readBody(limit)
+                      .then(parse)
+                      .then((body) => {
+                          ctx.body = body;
+                          return next(ctx);
+                      })
+            : (ctx) =>
+                  ctx.readBody(limit).then((body) => {
+                      ctx.body = parse(body);
+                      return next(ctx);
+                  });
     }
 
     for (let i = parts.interceptors.length - 1; i >= 0; i--) {
@@ -153,7 +169,9 @@ export function composePipeline(parts: PipelineParts): Run {
     const coerceQuery = parts.coerceQuery;
     if (coerceParams !== null || coerceQuery !== null) {
         const next = run;
-        if (coerceQuery === null) {
+        if (parts.asyncInput) {
+            run = (ctx) => checkInputs(ctx, coerceParams, coerceQuery, next);
+        } else if (coerceQuery === null) {
             run = (ctx) => {
                 ctx.params = coerceParams!(ctx.params);
                 return next(ctx);
@@ -173,6 +191,31 @@ export function composePipeline(parts: PipelineParts): Run {
     }
 
     return run;
+}
+
+/** Params then query, waiting for a step only when it returns a promise. */
+function checkInputs(ctx: RequestContext, params: Step | null, query: Step | null, next: Run): unknown {
+    if (params !== null) {
+        const out = params(ctx.params);
+        if (out instanceof Promise) {
+            return out.then((value) => {
+                ctx.params = value;
+                return checkInputs(ctx, null, query, next);
+            });
+        }
+        ctx.params = out;
+    }
+    if (query !== null) {
+        const out = query(ctx.query);
+        if (out instanceof Promise) {
+            return out.then((value) => {
+                ctx.query = value;
+                return next(ctx);
+            });
+        }
+        ctx.query = out;
+    }
+    return next(ctx);
 }
 
 function singleGuard(guard: GuardFn, next: Run): Run {

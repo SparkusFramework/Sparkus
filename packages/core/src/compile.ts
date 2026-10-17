@@ -18,10 +18,17 @@ import {
     type InterceptorFn,
     type InterceptorLike,
     type Run,
+    type Step,
     validationFailed,
 } from "./pipeline.js";
-import { checkSchema, compileCoercer } from "./coerce.js";
-import { compileParser, compileProjector, type Schema } from "./schema.js";
+import { checkSchema, compileCoercer, invalidRequest, type Source } from "./coerce.js";
+import { compileParser, compileProjector, type AnySchema } from "./schema.js";
+import {
+    checkStandardSchema,
+    compileStandardInput,
+    compileStandardProjector,
+    isStandardSchema,
+} from "./standard.js";
 
 /**
  * A route resolved at startup: controller bound, guards and interceptors
@@ -35,10 +42,10 @@ export interface CompiledRoute {
     readonly status: number;
     /** "UserController.create", for errors and tooling. */
     readonly handlerName: string;
-    readonly body: Schema | undefined;
-    readonly params: Schema | undefined;
-    readonly query: Schema | undefined;
-    readonly response: Schema | undefined;
+    readonly body: AnySchema | undefined;
+    readonly params: AnySchema | undefined;
+    readonly query: AnySchema | undefined;
+    readonly response: AnySchema | undefined;
     readonly guards: number;
     readonly interceptors: number;
     /** Runs the whole pipeline. Returns the handler's value, or a promise of it. */
@@ -86,6 +93,26 @@ export function parsePath(path: string, where: string): string[] {
 
 function own<T>(target: object, key: symbol): readonly T[] {
     return Object.hasOwn(target, key) ? ((target as any)[key] as T[]) : [];
+}
+
+function checkInputSchema(schema: AnySchema, source: Source, where: string, pathParams: readonly string[]): void {
+    if (isStandardSchema(schema)) checkStandardSchema(schema, where, source);
+    else checkSchema(schema, source, where, pathParams);
+}
+
+function compileInput(schema: AnySchema, source: Source): Step {
+    if (isStandardSchema(schema)) return compileStandardInput(schema, source, (issue) => invalidRequest(source, issue));
+    return compileCoercer(schema, source);
+}
+
+function compileBody(schema: AnySchema, where: string): Step {
+    if (isStandardSchema(schema)) return compileStandardInput(schema, "$", validationFailed);
+    return compileParser(schema, validationFailed, where);
+}
+
+function compileResponse(schema: AnySchema, where: string): Step | null {
+    if (isStandardSchema(schema)) return compileStandardProjector(schema, where);
+    return compileProjector(schema, where);
 }
 
 export function compileRoutes(options: CompileOptions, container: Container): CompiledRoute[] {
@@ -152,8 +179,10 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
             const body = route.options.body;
             const where = `${id} (${handlerName})`;
             const { params, query, response } = route.options;
-            if (params !== undefined) checkSchema(params, "params", where, paramNames);
-            if (query !== undefined) checkSchema(query, "query", where, paramNames);
+            if (params !== undefined) checkInputSchema(params, "params", where, paramNames);
+            if (query !== undefined) checkInputSchema(query, "query", where, paramNames);
+            if (body !== undefined && isStandardSchema(body)) checkStandardSchema(body, where, "body");
+            if (response !== undefined && isStandardSchema(response)) checkStandardSchema(response, where, "response");
 
             routes.push({
                 method: route.method,
@@ -171,11 +200,12 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                     handler: method.bind(instance) as (ctx: RequestContext) => unknown,
                     guards,
                     interceptors,
-                    parseBody: body === undefined ? null : compileParser(body, validationFailed, where),
+                    parseBody: body === undefined ? null : compileBody(body, where),
                     bodyLimit: options.bodyLimit,
-                    project: response === undefined ? null : compileProjector(response, where),
-                    coerceParams: params === undefined ? null : compileCoercer(params, "params"),
-                    coerceQuery: query === undefined ? null : compileCoercer(query, "query"),
+                    project: response === undefined ? null : compileResponse(response, where),
+                    coerceParams: params === undefined ? null : compileInput(params, "params"),
+                    coerceQuery: query === undefined ? null : compileInput(query, "query"),
+                    asyncInput: [body, params, query].some(isStandardSchema),
                 }),
             });
         }

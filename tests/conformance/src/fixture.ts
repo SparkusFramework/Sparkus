@@ -21,6 +21,7 @@ import {
     type OnInit,
     type OnShutdown,
 } from "sparkus";
+import { z } from "zod";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -370,7 +371,60 @@ class SchemaController {
     }
 }
 
-export const controllers = [RootController, UserController, FileController, AdminController, TypedController, SchemaController];
+// Standard Schema: the same features with Zod schemas instead of t.
+const ZodCreate = {
+    body: z.object({
+        name: z.string().min(1),
+        age: z.number().int().min(0),
+        address: z.object({ city: z.string() }).optional(),
+    }),
+    response: z.object({ id: z.number(), name: z.string(), bodyKeys: z.array(z.string()) }),
+    status: 201,
+};
+
+const ZodGet = {
+    params: z.object({ id: z.coerce.number().int().min(1) }),
+    query: z.object({ page: z.coerce.number().int().optional() }),
+};
+
+const ZodAsync = { body: z.object({ code: z.string().refine(async (code) => code === "ok", "must be ok") }) };
+
+const withSecret = <T extends object>(value: T) => ({ ...value, passwordHash: "$argon2id$secret" });
+
+@Controller("/zod")
+class ZodController {
+    @Post("/users", ZodCreate)
+    create(ctx: Ctx<typeof ZodCreate>) {
+        const age: number = ctx.body.age;
+        return withSecret({ id: age + 1, name: ctx.body.name, bodyKeys: Object.keys(ctx.body) });
+    }
+
+    @Get("/users/:id", ZodGet)
+    get(ctx: Ctx<typeof ZodGet>) {
+        const id: number = ctx.params.id;
+        return { id, page: ctx.query.page ?? null, idType: typeof id };
+    }
+
+    @Post("/async", ZodAsync)
+    async check(ctx: Ctx<typeof ZodAsync>) {
+        return { code: ctx.body.code };
+    }
+
+    @Get("/mismatch", { response: z.object({ id: z.number() }) })
+    mismatch() {
+        return { id: "seven" } as unknown as { id: number };
+    }
+}
+
+export const controllers = [
+    RootController,
+    UserController,
+    FileController,
+    AdminController,
+    TypedController,
+    SchemaController,
+    ZodController,
+];
 
 export function fixtureOptions(): Omit<AppOptions, "engine"> {
     return {

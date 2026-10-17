@@ -312,6 +312,48 @@ for (const [label, start] of targets) {
                 expectJson(await target.request("/schema/entity-raw"), 200, { raw: true });
             });
 
+            test("Standard Schema (Zod) body: validated, unknown fields dropped, response filtered", async () => {
+                const res = await target.request("/zod/users", {
+                    method: "POST",
+                    headers: JSON_BODY,
+                    body: JSON.stringify({ name: "Ada", age: 36, role: "admin", address: { city: "London", zip: "x" } }),
+                });
+                expectJson(res, 201, { id: 37, name: "Ada", bodyKeys: ["name", "age", "address"] });
+                expect(res.text).not.toContain("argon2id");
+            });
+
+            test("Standard Schema (Zod) invalid body is 400 SPK2004 with the library's message", async () => {
+                const res = await target.request("/zod/users", {
+                    method: "POST",
+                    headers: JSON_BODY,
+                    body: JSON.stringify({ name: "Ada", age: 3.5 }),
+                });
+                const problem = expectProblem(res, 400, { code: "SPK2004" });
+                expect(problem.issues).toHaveLength(1);
+                expect(problem.issues[0].path).toBe("$.age");
+                expect(problem.detail).toStartWith("Request body is invalid: $.age ");
+            });
+
+            test("Standard Schema (Zod) params and query are converted", async () => {
+                expectJson(await target.request("/zod/users/42?page=3"), 200, { id: 42, page: 3, idType: "number" });
+                const problem = expectProblem(await target.request("/zod/users/abc"), 400, { code: "SPK2004" });
+                expect(problem.issues[0].path).toBe("params.id");
+                expect(problem.detail).toStartWith('Invalid path parameter "id": ');
+            });
+
+            test("Standard Schema with an async check", async () => {
+                const post = (code: string) =>
+                    target.request("/zod/async", { method: "POST", headers: JSON_BODY, body: JSON.stringify({ code }) });
+                expectJson(await post("ok"), 200, { code: "ok" });
+                expectProblem(await post("no"), 400, { code: "SPK2004", issues: [{ path: "$.code", message: "must be ok" }] });
+            });
+
+            test("Standard Schema response mismatch is 500 SPK5001", async () => {
+                const problem = expectProblem(await target.request("/zod/mismatch"), 500, { code: "SPK5001" });
+                expect(problem.detail).toContain("GET /zod/mismatch (ZodController.mismatch)");
+                expect(problem.detail).toContain("$.id ");
+            });
+
             test("a value that does not match the response schema is a 500 naming the route and the path", async () => {
                 const problem = expectProblem(await target.request("/schema/mismatch"), 500, { code: "SPK5001" });
                 expect(problem.detail).toContain("GET /schema/mismatch (SchemaController.mismatch)");

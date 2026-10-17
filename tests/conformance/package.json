@@ -6,5 +6,8 @@
     "dependencies": {
         "sparkus": "workspace:*",
         "@sparkus/testing": "workspace:*"
+    },
+    "devDependencies": {
+        "zod": "^4.0.0"
     }
 }

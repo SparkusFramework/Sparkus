@@ -1,34 +1,38 @@
-import type { Infer, Schema } from "./schema.js";
+import type { AnySchema, Input, Output } from "./schema.js";
 
 export type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
 
+/**
+ * Every schema below is a `t` schema (compiled, fastest) or any Standard Schema (Zod, Valibot,
+ * ArkType...), whose own `validate()` runs and whose output replaces the value.
+ */
 export interface RouteOptions {
     /**
      * Schema of the JSON body. The body is read and validated before the handler runs, and
      * fields the schema does not list are dropped: `ctx.body` holds exactly its type.
      */
-    body?: Schema;
+    body?: AnySchema;
     /**
      * Types of the path parameters: `t.object({ id: t.integer() })`. Values are converted
      * and validated before guards run. Must name exactly the path's parameters.
      */
-    params?: Schema;
+    params?: AnySchema;
     /** Types of the query parameters, converted and validated like `params`. Unknown keys are dropped. */
-    query?: Schema;
+    query?: AnySchema;
     /**
      * Schema of the success response. The handler's return type is checked against it at
      * compile time, and it documents the response in OpenAPI. At runtime, fields it does not
      * list are dropped before interceptors run: an entity's internal fields never leak.
      * Scalar values are not re-validated (the types vouch for them).
      */
-    response?: Schema;
+    response?: AnySchema;
     /** Status of a successful response. Defaults to 200 (204 when the handler returns nothing). */
     status?: number;
 }
 
 /** What a handler may return for a route: the response schema's type when declared. */
-export type HandlerResult<O extends RouteOptions> = O["response"] extends Schema
-    ? Infer<O["response"]> | Promise<Infer<O["response"]>> | Response
+export type HandlerResult<O extends RouteOptions> = O["response"] extends AnySchema
+    ? Input<O["response"]> | Promise<Input<O["response"]>> | Response
     : unknown;
 
 /**
@@ -42,11 +46,11 @@ export interface Ctx<O extends RouteOptions = RouteOptions, S extends object = R
     /** Path without the query string, as received (not decoded). */
     readonly path: string;
     /** Path parameters, decoded: `/users/:id` gives `ctx.params.id`. Typed and converted when the route declares `params`. */
-    readonly params: O["params"] extends Schema ? Readonly<Infer<O["params"]>> : Readonly<Record<string, string>>;
+    readonly params: O["params"] extends AnySchema ? Readonly<Output<O["params"]>> : Readonly<Record<string, string>>;
     /** Query parameters, decoded; the first occurrence of a key wins. Typed and converted when the route declares `query`. */
-    readonly query: O["query"] extends Schema ? Readonly<Infer<O["query"]>> : Readonly<Record<string, string | undefined>>;
+    readonly query: O["query"] extends AnySchema ? Readonly<Output<O["query"]>> : Readonly<Record<string, string | undefined>>;
     /** Parsed and validated JSON body, typed from the route's schema. `undefined` when the route has no body schema. */
-    readonly body: O["body"] extends Schema ? Infer<O["body"]> : undefined;
+    readonly body: O["body"] extends AnySchema ? Output<O["body"]> : undefined;
     /** Reads a request header (case-insensitive). */
     header(name: string): string | undefined;
     /** Status of the response. Starts at the route's status; set it to change the response status. */

@@ -53,6 +53,7 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 - `params`: flat `t.object` naming exactly the path's parameters, all required. Values converted (integer, number, boolean "true"/"false"/"1"/"0").
 - `query`: flat `t.object`, fields usually `t.optional(...)`; unknown keys dropped. Invalid params/query: 400 SPK2004, `issues[0].path` is `params.id` or `query.page`.
 - Without a schema: `ctx.params` / `ctx.query` are strings.
+- Standard Schema: any `body`, `params`, `query` or `response` may be a Zod, Valibot or ArkType schema (anything implementing https://standardschema.dev) instead of a `t` schema. Types are inferred the same way (`Ctx<typeof Route>`). Its `validate()` runs as is (async checks are awaited); `ctx.body` / `ctx.params` / `ctx.query` get the library's output, the response sends the schema's output. Unknown fields are dropped if the library drops them (Zod and Valibot objects do; ArkType needs `"+": "delete"`). Params and query arrive as strings: use the library's coercion (`z.coerce.number()`). Errors keep Sparkus' shape (400 SPK2004, first issue, library's message; 500 SPK5001 for the response). OpenAPI uses the library's JSON Schema when it provides one (Zod 4 does). `t` schemas are faster (compiled): prefer them; use a library schema when you already have one.
 
 ## Ctx (handlers, guards, interceptors)
 

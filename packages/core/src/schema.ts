@@ -4,6 +4,7 @@
  * parser and a response projector.
  */
 import { ErrorCode, SparkusError } from "./errors.js";
+import type { StandardSchemaV1 } from "./standard.js";
 
 type Kind = "string" | "integer" | "number" | "boolean" | "object" | "array";
 
@@ -23,6 +24,15 @@ export interface Schema<T = unknown, Optional extends boolean = boolean> {
 }
 
 export type Infer<S> = S extends Schema<infer T, boolean> ? T : never;
+
+/** What a route accepts as a schema: a `t` schema, or any Standard Schema (Zod, Valibot, ArkType...). */
+export type AnySchema = Schema | StandardSchemaV1;
+
+/** Type a schema produces: what `ctx.body`, `ctx.params` and `ctx.query` hold. */
+export type Output<S> = S extends Schema ? Infer<S> : S extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<S> : never;
+
+/** Type a schema accepts: what a handler returns for its `response` schema. */
+export type Input<S> = S extends Schema ? Infer<S> : S extends StandardSchemaV1 ? StandardSchemaV1.InferInput<S> : never;
 
 type Shape = Record<string, Schema<unknown, boolean>>;
 
