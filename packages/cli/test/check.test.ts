@@ -26,6 +26,20 @@ describe("sparkus check / routes", () => {
         expect(JSON.parse(res.out)).toMatchObject({ ok: true, routes: 2 });
     });
 
+    test("a controller missing from the app is a warning", async () => {
+        const entry = join(import.meta.dir, "fixtures-unlisted", "app.ts");
+        const res = await run(["check", entry, "--json"]);
+        expect(res.code).toBe(0);
+        const out = JSON.parse(res.out);
+        expect(out).toMatchObject({ ok: true, routes: 1 });
+        expect(out.warnings).toHaveLength(1);
+        expect(out.warnings[0]).toStartWith("Orders (");
+        expect(out.warnings[0]).toEndWith(
+            `orders/orders.controller.ts) has @Controller() but serves no route. Add it to controllers in ${entry}.`,
+        );
+        expect((await run(["check", join(fixtures, "ok-app.ts"), "--json"])).out).not.toContain("warnings");
+    });
+
     test("a wiring error is reported with its code", async () => {
         const res = await run(["check", join(fixtures, "cycle-app.ts"), "--json"]);
         expect(res.code).toBe(1);

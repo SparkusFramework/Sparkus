@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { CliError, describeError, loadApp } from "./app-loader.js";
+import { CliError, describeError, loadApp, unlistedControllers } from "./app-loader.js";
 import { ArgsError, parseArgs, suggest, type FlagSpecs } from "./args.js";
 import { dev } from "./dev.js";
 import { initProject } from "./init.js";
@@ -50,7 +50,9 @@ const COMMANDS: Record<string, Command> = {
     },
     check: {
         usage: "check [entry]",
-        summary: "Load the app and wire it (DI, routes, schemas) without listening. Reports the first error.",
+        summary:
+            "Load the app and wire it (DI, routes, schemas) without listening. Reports the first error, " +
+            "and controllers missing from the app.",
         run: async ({ json, positionals }) => {
             const { app, entry } = await loadApp(positionals[0], process.cwd());
             try {
@@ -61,7 +63,12 @@ const COMMANDS: Record<string, Command> = {
                 return 1;
             }
             const count = app.routes.length;
-            print(json, { ok: true, entry, routes: count }, `✓ ${entry}: ${count} routes, ready.`);
+            const warnings = await unlistedControllers(app, entry, process.cwd());
+            print(
+                json,
+                warnings.length > 0 ? { ok: true, entry, routes: count, warnings } : { ok: true, entry, routes: count },
+                [`✓ ${entry}: ${count} routes, ready.`, ...warnings.map((warning) => `! ${warning}`)].join("\n"),
+            );
             return 0;
         },
     },

@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** What the CLI needs from a Sparkus app. Duck-typed: the CLI has no dependency on the framework. */
@@ -43,6 +43,42 @@ export async function loadApp(entry: string | undefined, cwd: string): Promise<{
         );
     }
     return { app, entry: found };
+}
+
+// Same symbol as @sparkus/core's @Controller(): the CLI does not import the framework.
+const CONTROLLER = Symbol.for("sparkus.controller");
+const CONTROLLER_FILE = /\.controller\.[cm]?[jt]s$/;
+
+function controllerFiles(dir: string): string[] {
+    const found: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) found.push(...controllerFiles(path));
+        else if (CONTROLLER_FILE.test(entry.name)) found.push(path);
+    }
+    return found;
+}
+
+/**
+ * Controllers exported from `*.controller.ts` files next to the entry (and below it)
+ * that serve no route: almost always a controller missing from `createApp({ controllers })`,
+ * which would otherwise only show up as a 404.
+ */
+export async function unlistedControllers(app: InspectableApp, entry: string, cwd: string): Promise<string[]> {
+    const served = new Set(app.routes.map((route) => route.handler.slice(0, route.handler.lastIndexOf("."))));
+    const warnings: string[] = [];
+    for (const file of controllerFiles(dirname(resolve(cwd, entry)))) {
+        const module = await import(pathToFileURL(file).href);
+        for (const value of Object.values(module)) {
+            if (typeof value !== "function" || !Object.hasOwn(value, CONTROLLER) || served.has(value.name)) continue;
+            const shown = relative(cwd, file).replaceAll("\\", "/");
+            warnings.push(
+                `${value.name} (${shown}) has @Controller() but serves no route. Add it to controllers in ${entry}.`,
+            );
+        }
+    }
+    return warnings;
 }
 
 /** Splits "[SPK1002] message" into its code and message. */

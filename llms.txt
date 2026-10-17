@@ -107,7 +107,7 @@ In memory, full pipeline, no port.
 ## CLI
 
 - `sparkus init <dir>`: new project with AGENTS.md, CLAUDE.md, skills, check hook.
-- `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`.
+- `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`. `warnings` lists controllers in `*.controller.ts` files that serve no route (missing from `controllers`).
 - `sparkus routes [entry] --json`: list routes.
 - `sparkus openapi [entry]`: print the OpenAPI 3.1 document.
 - `sparkus dev [entry]`: run and restart on changes under src/.
