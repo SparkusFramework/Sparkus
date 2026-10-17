@@ -43,6 +43,9 @@ await Promise.all(
             format: "esm",
             sourcemap: "linked",
             packages: target.standalone ? "bundle" : "external",
+            // Entry points of one package share their modules (one HttpError class, one
+            // Container...) instead of each bundling its own copy: instanceof must hold.
+            splitting: target.entries.length > 1,
         });
         if (!result.success) {
             failed = true;
