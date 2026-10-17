@@ -8,7 +8,7 @@
  *
  *   bun run.ts [--targets a,b] [--scenarios a,b] [--rounds 3] [--duration 10]
  *              [--warmup 3] [--cooldown 0] [--connections 100] [--workers 4]
- *              [--pin 1] [--baseline <git-ref>] [--label name]
+ *              [--pin 1] [--cores 0-7] [--baseline <git-ref>] [--label name]
  *
  * --pin 1 (default) gives each server a physical core of its own and keeps
  * autocannon on other cores: an SMT sibling shared with a busy thread costs a
@@ -45,6 +45,15 @@ const pick = <T extends { name: string }>(all: T[], key: string): T[] => {
 };
 
 const baselineRef = args.get("baseline");
+
+/** "0-3,8" -> [0, 1, 2, 3, 8]. */
+function parseCpuList(list: string | undefined): number[] | undefined {
+    if (!list) return undefined;
+    return list.split(",").flatMap((part) => {
+        const [a, b] = part.split("-").map(Number);
+        return b === undefined ? [a!] : Array.from({ length: b - a! + 1 }, (_, i) => a! + i);
+    });
+}
 const config = {
     targets: pick(allTargets, "targets"),
     scenarios: pick(allScenarios, "scenarios"),
@@ -55,6 +64,8 @@ const config = {
     connections: Number(args.get("connections") ?? 100),
     workers: Number(args.get("workers") ?? 4),
     pin: (args.get("pin") ?? "1") !== "0" && logicalCpus >= 8,
+    /** Logical CPUs this session may use (e.g. "0-7"), for running two sessions side by side. */
+    cores: parseCpuList(args.get("cores")),
     baseline: baselineRef,
     nodeBin: process.env.NODE_BIN ?? "node",
     /** Also writes results/<label>.md, so chained sessions keep their summaries. */
@@ -131,7 +142,8 @@ if (config.baseline) {
 await acquireMachineLock();
 
 const autocannon = Bun.resolveSync("autocannon/autocannon.js", benchDir);
-let nextPort = 4100;
+// Two sessions on disjoint --cores must not share ports.
+let nextPort = 4100 + (config.cores?.[0] ?? 0) * 100;
 
 interface Sample {
     round: number;
@@ -172,7 +184,7 @@ const track = <P extends Bun.Subprocess>(proc: P): P => {
 const sampler = new SystemSampler().start();
 // Pinned: this process (hence autocannon, which inherits its affinity) runs on
 // the loader CPUs, each server is moved to its own physical core once started.
-const layout = config.pin ? cpuLayout() : undefined;
+const layout = config.pin ? cpuLayout(config.cores) : undefined;
 if (layout) setAffinity(process.pid, layout.loader);
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     process.on(signal, () => {
