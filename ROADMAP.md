@@ -116,6 +116,25 @@ Coût des options de production (logs de requêtes, headers de sécurité, reque
 
 Décomposition sous Bun avant optimisation (`hello`) : logs −15,1 %, headers de sécurité −8,6 %, request id −7,6 %, CORS sans `Origin` −6,2 % (le coût fixe du chemin observé). Micro-bench (`bench/micro/observe.js`) qui a guidé les deux optimisations gardées : Bun construit les headers d'une réponse à partir d'un objet à ~75 ns par entrée (500 ns pour 7) mais copie un `Headers` préconstruit en 47 ns, d'où un `Headers` de base copié par requête ; la ligne de log de requête sérialisée à la main coûte 87 ns contre 519 ns pour la boucle générique. `randomUUID()` ne coûte que 36 ns : gardé. Rapports : [première version](bench/reference/2026-10-17-phase3-production-cost.md), [optimisé](bench/reference/2026-10-17-phase3-production-cost-optimized.md).
 
+**Comparaison avec les autres frameworks**, après la phase 3 (Windows, épinglé, 3 rounds : verdicts indicatifs, [rapport](bench/reference/2026-10-17-phase3-comparison-windows.md)), en % du serveur brut du runtime :
+
+| | `hello` | `params-query` | `post-validate` |
+|---|---:|---:|---:|
+| **Sparkus/Bun** | **99 %** | **99 %** | **94 %** |
+| Elysia | 98 % | 99 % | 90 % |
+| Hono (Bun) | 93 % | 94 % | 83 % |
+| Sparkus/Bun, toutes les options de prod | 83 % | 85 % | 81 % |
+| **Sparkus/Node** | **98 %** | **98 %** | **94 %** |
+| Fastify | 85 % | 85 % | 78 % |
+| Hono (Node) | 84 % | 84 % | 29 % |
+| NestJS (Fastify) | 83 % | 75 % | 38 % |
+| Sparkus/Node, toutes les options de prod | 81 % | 80 % | 78 % |
+| Fastify avec logger | 53 % | 54 % | 51 % |
+| Express | 53 % | 48 % | 43 % |
+| NestJS (Express) | 41 % | 36 % | 28 % |
+
+Critère de la phase 0 toujours tenu après la phase 3 : Sparkus/Bun à moins de 10 % de `Bun.serve` et devant Elysia, Sparkus/Node devant Fastify. Avec toutes ses options de production, Sparkus/Node reste au niveau de Fastify sans aucune option sur `post-validate` et devant NestJS-Fastify.
+
 Reporté :
 
 - ~~Propagation automatique du contexte~~ : **livrée en option, désactivée par défaut**, `logger: { requestContext: true }`. Toute ligne journalisée pendant une requête, par n'importe quel logger (`inject(Logger)` dans un service, à travers les `await`), porte `reqId` et, avec la télémétrie, `trace_id` / `span_id` du span serveur (pas le span actif le plus interne : Sparkus ne lit pas le contexte OpenTelemetry). `ctx.log` et un champ `reqId` explicite ne sont pas doublés ; les lignes hors requête n'ont rien. `node:async_hooks` n'est importé (dynamiquement) que si l'option est active ; elle met l'app sur le chemin observé, chaque route y est enveloppée une fois au démarrage (`Observer.enter`), le chemin nu est inchangé (D13). Conformité : 3 cas × 4 cibles (service après `await`, requêtes concurrentes, ligne hors requête) et le vrai SDK OpenTelemetry (ids du span serveur dans les lignes).
