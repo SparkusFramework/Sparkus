@@ -32,6 +32,7 @@ The code, then what is wrong (naming the class, route or value at fault), then t
 | SPK1014 | Invalid route path: empty segment, bad parameter name, repeated parameter, or unsupported syntax (`*`, `?`, `(`). | Use static segments and `:name` parameters (letters, digits, `_`, `$`). |
 | SPK1015 | `listen()` called twice on the same app. | Create one app per server. |
 | SPK1016 | An `onInit()` or `onShutdown()` hook failed. | See `cause`. A failing `onInit()` stops startup; failing `onShutdown()` hooks are reported together after all of them ran. |
+| SPK1017 | A route's `params` or `query` schema is invalid: not a `t.object()`, a field that is not a string, integer, number or boolean, or `params` that do not match the path's parameters exactly (missing, extra, or optional). | Declare exactly the path's parameters in `params`, all required; use flat scalar fields. |
 
 ## Request
 

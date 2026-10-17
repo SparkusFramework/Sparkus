@@ -20,6 +20,7 @@ export const ErrorCode = {
     InvalidRoutePath: "SPK1014",
     AlreadyListening: "SPK1015",
     LifecycleFailed: "SPK1016",
+    InvalidRouteSchema: "SPK1017",
 
     RouteNotFound: "SPK2001",
     MethodNotAllowed: "SPK2002",
