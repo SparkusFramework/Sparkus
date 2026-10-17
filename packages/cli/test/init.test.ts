@@ -46,7 +46,7 @@ describe("sparkus init", () => {
 
         const tests = Bun.spawnSync([process.execPath, "test"], { cwd: root, stdout: "pipe", stderr: "pipe" });
         const report = tests.stderr.toString();
-        expect(report).toContain("5 pass");
+        expect(report).toContain("6 pass");
         expect(tests.exitCode).toBe(0);
 
         const typecheck = Bun.spawnSync([process.execPath, "check"], { cwd: root, stdout: "pipe", stderr: "pipe" });

@@ -81,13 +81,13 @@ export const AppConfig = config({
 // in a service: private readonly config = inject(AppConfig);   this.config.PORT is a number
 ```
 
-Keys are environment variable names. Fields: `t.string`, `t.integer`, `t.number`, `t.boolean` ("true"/"false"/"1"/"0"), `t.enum`, `t.array` of those; `t.optional` or `default` for optional variables; an empty variable is unset. Read from `process.env` at startup (Bun loads `.env` itself; under Node use `node --env-file=.env`). Missing or invalid variables stop the app with SPK1018, listing all of them (values are never printed). In tests: `{ provide: AppConfig, useValue: { ... } }`.
+Keys are environment variable names. Fields: `t.string`, `t.integer`, `t.number`, `t.boolean` ("true"/"false"/"1"/"0"), `t.enum`, `t.array` of those; `t.optional` or `default` for optional variables; an empty variable is unset. Read from `process.env` at startup (Bun loads `.env` itself; under Node use `node --env-file=.env`). Missing or invalid variables stop the app with SPK1018, listing all of them (values are never printed); a `default` inside `t.optional()` is refused. In tests: `overrides: [AppConfig.override({ PAGE_SIZE: 5 })]` (typed, checked, defaults and environment kept for the rest). `listen()` reads `PORT` itself (default 3000, invalid: SPK1018); declare it in `config()` too and pass `listen({ port })` to keep one source.
 
 ## Logging
 
-`private readonly log = inject(Logger).child("users")`, then `this.log.info("User created", { userId })`, `this.log.error("Payment failed", error)`. In handlers prefer `ctx.log` (adds `reqId`). Levels: trace, debug, info, warn, error, fatal. One JSON object per line (`{"level":"info","time":1760000000000,"module":"users","msg":"...","userId":1}`), readable lines in a terminal.
+`private readonly log = inject(Logger).child("users")`, then `this.log.info("User created", { userId })`, `this.log.error("Payment failed", error)` (the second argument is an object of fields, or anything else, such as a `catch` variable, logged as `err`). In handlers prefer `ctx.log` (adds `reqId`). Levels: trace, debug, info, warn, error, fatal. One JSON object per line (`{"level":"info","time":1760000000000,"module":"users","msg":"...","userId":1}`), readable lines in a terminal.
 
-`createApp({ logger: { level, modules: { db: "debug" }, format: "json" | "pretty", requests: true, write } })`; `logger: false` for none. `LOG_LEVEL=info,db=debug` sets the levels when the code does not. Default level: info (warn under NODE_ENV=test). `requests: true` logs one line per request (`msg: "GET /users/1 200"`, `method`, `path`, `route`, `status`, `ms`, `reqId`).
+`createApp({ logger: { level, modules: { db: "debug" }, format: "json" | "pretty", requests: true, write } })`; `logger: false` for none. `LOG_LEVEL=info,db=debug` sets the levels, only when the code gives no `level` (then `modules` merge over it). Request lines use the module "http" (`modules: { http: "warn" }` silences them), Sparkus' own lines "sparkus". Default level: info (warn under NODE_ENV=test). `requests: true` logs one line per request (`msg: "GET /users/1 200"`, `method`, `path`, `route`, `status`, `ms`, `reqId`).
 
 ## Production options
 
@@ -99,14 +99,14 @@ createApp({
     securityHeaders: true,            // CSP, HSTS, nosniff, frame-options...; { "strict-transport-security": false } drops one
     requestId: true,                  // echo x-request-id in every response
     health: true,                     // GET /health (liveness), GET /ready (runs every HealthCheck service)
-    requestTimeout: 30_000,           // 503 SPK2008 and ctx.signal aborted after 30 s; route option `timeout` overrides
+    requestTimeout: 30_000,           // 503 SPK2008 and ctx.signal aborted after 30 s (async work only); route option `timeout` overrides
     telemetry: { tracer: trace.getTracer("api"), meter: metrics.getMeter("api") },   // @opentelemetry/api
 });
 await app.listen({ shutdownDelay: 5_000, idleTimeout: 65_000 });
 ```
 
-- Everything is off by default and costs nothing when off. CORS, security and request id headers are on every response, errors and 404 included; a header the handler sets wins. A CORS preflight (OPTIONS with `access-control-request-method`) on a path with routes answers 204 with that path's methods. Origins are exact (`https://app.example.com`, no trailing slash: SPK1019) or RegExps; `origin: "*"` refuses `credentials`.
-- Readiness: a service with `checkHealth()` (implements `HealthCheck`) is called by `/ready`; throwing or returning `false` gives 503 SPK2009 naming it. From the shutdown signal on, `/ready` answers 503; `shutdownDelay` keeps serving that long first, so load balancers stop sending traffic. Probes skip guards and are left out of OpenAPI.
+- Everything is off by default and costs nothing when off. CORS, security and request id headers are on every response, errors and 404 included; a header the handler sets wins. A CORS preflight (OPTIONS with `access-control-request-method`) on a path with routes answers 204 with that path's methods. Origins are exact (`https://app.example.com`, no trailing slash: SPK1019), RegExps, or a function `(origin) => boolean` (a throw refuses the origin); `origin: "*"` refuses `credentials`. A handler that sets `vary` replaces the `vary: origin` CORS adds: include `origin` in it.
+- Readiness: a service with `checkHealth()` (implements `HealthCheck`) is called by `/ready`; throwing or returning `false` gives 503 SPK2009 naming it. From the shutdown signal on (and in `app.close()`), `/ready` answers 503; on a signal, `shutdownDelay` keeps serving that long first, so load balancers stop sending traffic. Checks are the services the container built (injected somewhere), found on the first probe; `useValue` providers are not checked. Probes skip guards and are left out of OpenAPI.
 - Telemetry: a server span per request named `GET /users/:id` with the HTTP semantic convention attributes, errors recorded on 5xx, and the `http.server.request.duration` histogram (seconds). `extract: (ctx) => ...` gives the parent context (traceparent), `activate: (span, run) => context.with(trace.setSpan(context.active(), span), run)` makes your spans its children.
 
 ## Guards and interceptors
@@ -145,7 +145,7 @@ const res = await app.inject({ method: "POST", url: "/users", body: { name: "Ada
 res.status; res.json(); res.headers; res.text;
 ```
 
-In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: pass the app's `providers` (tokens) too. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
+In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
 
 ## CLI
 
