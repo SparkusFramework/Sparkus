@@ -72,14 +72,15 @@ Reporté à la phase suivante :
 
 - Moteur Node : 2,8 % derrière le prototype sur `hello` (session de référence) ; variantes H2 à H7 de l'expert Node non mesurées (interrompues par un redémarrage Windows Update).
 - Moteur Bun : `post-validate` à 95 % du plafond.
-- Champs inconnus du body : acceptés aujourd'hui ; décider s'ils sont rejetés ou retirés (sécurité), et mesurer le coût.
+- ~~Champs inconnus du body~~ : retirés (D12, phase 2).
 - Comparaison finale v1 intégrée contre `bun-raw`, `node-raw`, Elysia et Fastify ; chiffres Linux (D8).
 
 ## Phase 2 — Schémas et contrat
 
 - [x] Un schéma par entrée : `params` et `query` typés, convertis et validés (400 qui nomme la valeur), `body` validé, `response` qui type le retour du handler à la compilation. Schémas vérifiés au démarrage (`SPK1017`).
 - [x] OpenAPI 3.1 généré depuis les schémas (`app.openapi()`, `sparkus openapi`).
-- [ ] **Sérialisation compilée** des réponses (à prouver en A/B contre `JSON.stringify`), et décision sur les champs non déclarés.
+- [x] **Champs non déclarés** (D12) : retirés du body à toute profondeur, retirés de la réponse quand la route déclare `response` (projection compilée juste après le handler, puis JSON natif) ; forme incompatible → 500 `SPK5001`. Coût mesuré en A/B contre `main` (`JSON.stringify` sans filtre, cible de bench avec schémas `response`) : **≈ sur les 6 cases** (Bun et Node × `hello`, `params-query`, `post-validate`), aucune régression prouvée ([rapport](bench/reference/2026-10-17-ab-schema-filter-vs-main.md)).
+- [x] **Sérialisation compilée : mesurée et écartée.** Un sérialiseur généré (concaténation, noms de champs en dur, chaînes courtes quotées sans `JSON.stringify`, comme fast-json-stringify) produit la même sortie, mais perd contre le JSON natif dès que la chaîne concaténée doit être aplatie (`Buffer.byteLength` sous Node, `new Response(string)` sous Bun). Micro-bench (`bench/micro/serializer.js`) : sous Bun, `new Response(texte)` coûte 2 à 3,5 × `Response.json(objet)`. A/B HTTP contre la projection (5 rounds, [rapport](bench/reference/2026-10-17-ab-compiled-serializer-vs-projection.md)) : Bun **−3,2 %** `hello`, **−3,4 %** `params-query`, **−12,7 %** `list` (10 enregistrements), tous prouvés ; Node ≈ partout. À réévaluer seulement si un runtime expose un JSON natif plus lent que le nôtre.
 - [ ] Compatibilité [Standard Schema](https://standardschema.dev) (Zod, Valibot, ArkType) en chemin secondaire.
 - [ ] Client TypeScript typé généré.
 
