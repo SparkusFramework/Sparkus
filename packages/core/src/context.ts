@@ -1,3 +1,5 @@
+import type { Logger } from "./log.js";
+import type { Span } from "./observe.js";
 import type { AnySchema, Input, Output } from "./schema.js";
 
 export type HttpMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
@@ -28,6 +30,13 @@ export interface RouteOptions {
     response?: AnySchema;
     /** Status of a successful response. Defaults to 200 (204 when the handler returns nothing). */
     status?: number;
+    /** Maximum JSON body size in bytes for this route. Default: the app's `bodyLimit`. */
+    bodyLimit?: number;
+    /**
+     * Milliseconds this route may take (body, guards, interceptors, handler) before the client
+     * gets 503 SPK2008 and `ctx.signal` aborts. Default: the app's `requestTimeout`; 0 for none.
+     */
+    timeout?: number;
 }
 
 /** What a handler may return for a route: the response schema's type when declared. */
@@ -62,6 +71,19 @@ export interface Ctx<O extends RouteOptions = RouteOptions, S extends object = R
      * user). Typed by `Ctx`'s second parameter; not checked at runtime: the guard that fills it must run.
      */
     readonly state: S;
+    /**
+     * Request id: the incoming `x-request-id` header when it is a safe token (up to 128 letters,
+     * digits and `-_.:`), else a new UUID. The same value appears in `ctx.log` lines, request
+     * logs and (with the `requestId` app option) the response header.
+     */
+    readonly requestId: string;
+    /** Logger whose lines carry this request's id: `ctx.log.info("Order placed", { orderId })`. */
+    readonly log: Logger;
+    /**
+     * Aborted when the client disconnects or the request times out. Pass it on so the work
+     * stops with the request: `fetch(url, { signal: ctx.signal })`.
+     */
+    readonly signal: AbortSignal;
 }
 
 /** What an engine's context provides on top of `Ctx`. Engines implement it; applications never see it. */
@@ -71,8 +93,17 @@ export interface RequestContext extends Ctx<any> {
     params: any;
     /** Replaced by the typed values when the route declares a query schema. */
     query: any;
-    /** Response headers set with `setHeader()`, or null when none. */
-    readonly responseHeaders: Record<string, string> | null;
+    /**
+     * Response headers set with `setHeader()`, or null when none. When the app observes requests,
+     * they start with its CORS, security and request id headers.
+     */
+    responseHeaders: Record<string, string> | null;
+    /** `performance.now()` when an observed request started, 0 otherwise. */
+    startTime: number;
+    /** Server span of an observed request (telemetry), undefined otherwise. */
+    span: Span | undefined;
+    /** Aborts `signal` (request timeout). */
+    abort(reason: unknown): void;
     /**
      * Reads and parses the JSON body. Rejects with an HttpError: 415 when the
      * content type is not JSON, 413 above `limit` bytes, 400 when malformed.

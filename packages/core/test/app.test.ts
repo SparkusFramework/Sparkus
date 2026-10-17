@@ -118,8 +118,9 @@ describe("app", () => {
                 throw new Error("secret");
             }
         }
-        const logged: unknown[] = [];
-        const app = createApp({ controllers: [Boom], exposeErrors: false, logger: { error: (_m, e) => logged.push(e) } });
+        const logged: any[] = [];
+        const write = (line: string) => void logged.push(JSON.parse(line));
+        const app = createApp({ controllers: [Boom], exposeErrors: false, logger: { format: "json", write } });
         await app.init();
         const res = await app.fetch(new Request("http://x/"));
         expect(res.status).toBe(500);
@@ -130,6 +131,9 @@ describe("app", () => {
             code: "SPK5000",
         });
         expect(logged).toHaveLength(1);
+        expect(logged[0]).toMatchObject({ level: "error", module: "sparkus", msg: "Unhandled error in GET /" });
+        expect(logged[0].err).toMatchObject({ type: "Error", message: "secret" });
+        expect(logged[0].reqId).toBeString();
     });
 
     test("a route without guards or interceptors runs its handler directly", async () => {

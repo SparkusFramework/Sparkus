@@ -1,5 +1,5 @@
 import type { CompiledRoute } from "./compile.js";
-import type { Ctx } from "./context.js";
+import type { Ctx, RequestContext } from "./context.js";
 import {
     HttpError,
     SparkusError,
@@ -9,6 +9,8 @@ import {
     renderRouteNotFound,
     type RenderedError,
 } from "./errors.js";
+import type { Logger } from "./log.js";
+import type { Observer } from "./observe.js";
 import { suggestRoute } from "./suggest.js";
 
 /**
@@ -19,29 +21,48 @@ import { suggestRoute } from "./suggest.js";
  */
 export type ErrorMapper = (error: unknown, ctx: Ctx<any>) => unknown;
 
-export interface Logger {
-    error(message: string, error?: unknown): void;
-}
-
 export interface RuntimeOptions {
+    /** Largest body limit of any route: engines bound what they buffer with it. */
     bodyLimit: number;
     exposeErrors: boolean;
     onError: ErrorMapper | undefined;
-    logger: Logger;
+    log: Logger;
+    /** Lowercase name of the header the request id is read from. */
+    requestIdHeader: string;
+    observer: Observer | null;
 }
 
+/** A request id taken from a client must be safe to log and to echo. */
+const SAFE_ID = /^[\w.:-]{1,128}$/;
+
 /**
- * Everything an engine needs from the app: compiled routes and the error
- * rendering rules. Built once by `app.init()`.
+ * Everything an engine needs from the app: compiled routes, the error
+ * rendering rules and the request observer. Built once by `app.init()`.
  */
 export class AppRuntime {
     readonly bodyLimit: number;
+    readonly log: Logger;
+    readonly requestIdHeader: string;
+    /** Null when the app observes nothing: engines then keep their plain request path. */
+    readonly observer: Observer | null;
+    /** True from the start of a shutdown: readiness fails so load balancers stop sending traffic. */
+    draining = false;
+    private readonly errors: Logger;
 
     constructor(
         readonly routes: readonly CompiledRoute[],
         private readonly options: RuntimeOptions,
     ) {
         this.bodyLimit = options.bodyLimit;
+        this.log = options.log;
+        this.requestIdHeader = options.requestIdHeader;
+        this.observer = options.observer;
+        this.errors = options.log.child("sparkus");
+    }
+
+    /** The client's request id when it is safe, else a new one. */
+    requestId(incoming: string | null | undefined): string {
+        return incoming != null && SAFE_ID.test(incoming) ? incoming : crypto.randomUUID();
     }
 
     /**
@@ -63,11 +84,11 @@ export class AppRuntime {
         }
 
         if (current instanceof HttpError) {
-            if (current.status >= 500) this.log(current, ctx);
+            if (current.status >= 500) this.report(current, ctx);
             return renderHttpError(current);
         }
 
-        this.log(current, ctx);
+        this.report(current, ctx);
         const detail = this.options.exposeErrors
             ? current instanceof Error
                 ? current.message
@@ -85,8 +106,12 @@ export class AppRuntime {
         return renderMethodNotAllowed(method, path, allow);
     }
 
-    private log(error: unknown, ctx: Ctx<any> | undefined): void {
-        const where = ctx === undefined ? "" : ` in ${ctx.method} ${ctx.path}`;
-        this.options.logger.error(`[sparkus] Unhandled error${where}`, error);
+    private report(error: unknown, ctx: Ctx<any> | undefined): void {
+        if (ctx === undefined) {
+            this.errors.error("Unhandled error", { err: error });
+            return;
+        }
+        this.errors.error(`Unhandled error in ${ctx.method} ${ctx.path}`, { err: error, reqId: ctx.requestId });
+        (ctx as RequestContext).span?.recordException(error);
     }
 }

@@ -3,7 +3,8 @@
 import Fastify from "fastify";
 import { HOST, PORT, findUser } from "../shared.js";
 
-const app = Fastify({ logger: false });
+// FASTIFY_LOGGER=1 (target fastify-logger): pino on stdout, Fastify's production logging.
+const app = Fastify({ logger: process.env.FASTIFY_LOGGER === "1" });
 
 app.get(
     "/",

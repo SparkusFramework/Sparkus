@@ -48,6 +48,10 @@ export interface CompiledRoute {
     readonly response: AnySchema | undefined;
     readonly guards: number;
     readonly interceptors: number;
+    /** Maximum body size of this route, in bytes. */
+    readonly bodyLimit: number;
+    /** Built by Sparkus (health checks): left out of OpenAPI and the generated client. */
+    readonly internal: boolean;
     /** Runs the whole pipeline. Returns the handler's value, or a promise of it. */
     readonly run: Run;
 }
@@ -57,6 +61,8 @@ export interface CompileOptions {
     guards: readonly GuardLike[];
     interceptors: readonly InterceptorLike[];
     bodyLimit: number;
+    /** Default request timeout in milliseconds, 0 for none. */
+    timeout: number;
 }
 
 const PARAM_NAME = /^[A-Za-z_$][\w$]*$/;
@@ -113,6 +119,12 @@ function compileBody(schema: AnySchema, where: string): Step {
 function compileResponse(schema: AnySchema, where: string): Step | null {
     if (isStandardSchema(schema)) return compileStandardProjector(schema, where);
     return compileProjector(schema, where);
+}
+
+function checkLimit(value: number, name: string, where: string, unit: string): void {
+    if (!Number.isSafeInteger(value) || value < 0) {
+        throw new SparkusError(ErrorCode.InvalidOption, `${where}: ${name} ${value} is not a number of ${unit}. Use an integer >= 0.`);
+    }
 }
 
 export function compileRoutes(options: CompileOptions, container: Container): CompiledRoute[] {
@@ -183,6 +195,10 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
             if (query !== undefined) checkInputSchema(query, "query", where, paramNames);
             if (body !== undefined && isStandardSchema(body)) checkStandardSchema(body, where, "body");
             if (response !== undefined && isStandardSchema(response)) checkStandardSchema(response, where, "response");
+            const bodyLimit = route.options.bodyLimit ?? options.bodyLimit;
+            const timeout = route.options.timeout ?? options.timeout;
+            checkLimit(bodyLimit, "bodyLimit", where, "bytes");
+            checkLimit(timeout, "timeout", where, "milliseconds");
 
             routes.push({
                 method: route.method,
@@ -196,12 +212,15 @@ export function compileRoutes(options: CompileOptions, container: Container): Co
                 response,
                 guards: guards.length,
                 interceptors: interceptors.length,
+                bodyLimit,
+                internal: false,
                 run: composePipeline({
                     handler: method.bind(instance) as (ctx: RequestContext) => unknown,
                     guards,
                     interceptors,
                     parseBody: body === undefined ? null : compileBody(body, where),
-                    bodyLimit: options.bodyLimit,
+                    bodyLimit,
+                    timeout,
                     project: response === undefined ? null : compileResponse(response, where),
                     coerceParams: params === undefined ? null : compileInput(params, "params"),
                     coerceQuery: query === undefined ? null : compileInput(query, "query"),

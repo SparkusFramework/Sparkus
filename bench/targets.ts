@@ -7,6 +7,8 @@ export interface Target {
     entry: string;
     /** "ceiling" = raw server of the runtime, used as the 100 % reference. */
     role: "ceiling" | "sparkus" | "competitor";
+    /** Extra environment variables of the server process. */
+    env?: Record<string, string>;
 }
 
 export const targets: Target[] = [
@@ -30,4 +32,10 @@ export const targets: Target[] = [
 export const extraTargets: Target[] = [
     { name: "sparkus-pipeline-bun", runtime: "bun", entry: "targets/sparkus-pipeline/server.ts", role: "sparkus" },
     { name: "sparkus-pipeline-node", runtime: "node", entry: "targets/sparkus-pipeline/dist/server.js", role: "sparkus" },
+    // Production options on (request logs to stdout, security headers, request ids, CORS, health):
+    // what they cost, measured against sparkus-bun / sparkus-node in the same session.
+    { name: "sparkus-prod-bun", runtime: "bun", entry: "targets/sparkus/server.ts", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
+    { name: "sparkus-prod-node", runtime: "node", entry: "targets/sparkus/dist/server.js", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
+    // Fastify with its logger (pino, one line at the start and one at the end of each request).
+    { name: "fastify-logger", runtime: "node", entry: "targets/fastify/server.js", role: "competitor", env: { FASTIFY_LOGGER: "1" } },
 ];

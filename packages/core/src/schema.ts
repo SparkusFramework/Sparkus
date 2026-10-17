@@ -6,11 +6,19 @@
 import { ErrorCode, SparkusError } from "./errors.js";
 import type { StandardSchemaV1 } from "./standard.js";
 
-type Kind = "string" | "integer" | "number" | "boolean" | "object" | "array";
+type Kind = "string" | "integer" | "number" | "boolean" | "enum" | "object" | "array";
 
 interface Bounds {
     min?: number;
     max?: number;
+}
+
+/**
+ * `default`: the value used when the input leaves the field out (body, query, config).
+ * The field is then always present in `ctx.body` and `ctx.query`, so its type is not optional.
+ */
+interface Default<T> {
+    default?: T;
 }
 
 export interface Schema<T = unknown, Optional extends boolean = boolean> {
@@ -21,6 +29,10 @@ export interface Schema<T = unknown, Optional extends boolean = boolean> {
     readonly nullable?: boolean;
     readonly shape?: Record<string, Schema>;
     readonly item?: Schema;
+    /** Allowed values of a `t.enum()`. */
+    readonly values?: readonly string[];
+    /** Value used when the input leaves the field out. Absent means none. */
+    readonly default?: unknown;
     /** Phantom field: carries the inferred type, never set at runtime. */
     readonly __type?: T;
 }
@@ -40,7 +52,7 @@ type Shape = Record<string, Schema<unknown, boolean>>;
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-type ObjectType<S extends Shape> = Simplify<
+export type ObjectType<S extends Shape> = Simplify<
     { [K in keyof S as S[K] extends Schema<unknown, true> ? never : K]: Infer<S[K]> } & {
         [K in keyof S as S[K] extends Schema<unknown, true> ? K : never]?: Infer<S[K]>;
     }
@@ -50,11 +62,21 @@ function node<T>(kind: Kind, bounds: Bounds = {}, extra: Partial<Schema> = {}): 
     return { kind, bounds, optional: false, ...extra } as Schema<T, false>;
 }
 
+/** A scalar: bounds and default are passed together, stored apart. */
+function scalar<T>(kind: Kind, options: (Bounds & Default<T>) | undefined, extra: Partial<Schema> = {}): Schema<T, false> {
+    if (options === undefined) return node<T>(kind, {}, extra);
+    const { default: value, ...bounds } = options;
+    return node<T>(kind, bounds, value === undefined ? extra : { ...extra, default: value });
+}
+
 export const t = {
-    string: (bounds?: Bounds) => node<string>("string", bounds),
-    integer: (bounds?: Bounds) => node<number>("integer", bounds),
-    number: (bounds?: Bounds) => node<number>("number", bounds),
-    boolean: () => node<boolean>("boolean"),
+    string: (options?: Bounds & Default<string>) => scalar<string>("string", options),
+    integer: (options?: Bounds & Default<number>) => scalar<number>("integer", options),
+    number: (options?: Bounds & Default<number>) => scalar<number>("number", options),
+    boolean: (options?: Default<boolean>) => scalar<boolean>("boolean", options),
+    /** One of the listed strings: `t.enum(["draft", "published"])` is `"draft" | "published"`. */
+    enum: <const V extends readonly [string, ...string[]]>(values: V, options?: Default<V[number]>) =>
+        scalar<V[number]>("enum", options, { values: Object.freeze([...values]) }),
     object: <S extends Shape>(shape: S) => node<ObjectType<S>>("object", {}, { shape }),
     array: <S extends Schema>(item: S, bounds?: Bounds) => node<Infer<S>[]>("array", bounds, { item }),
     optional: <T>(schema: Schema<T, boolean>) => ({ ...schema, optional: true }) as Schema<T, true>,
@@ -105,17 +127,35 @@ function buildObject(target: string, fields: readonly Field[]): string {
     return code;
 }
 
-function checkKeys(schema: Schema, where: string): void {
+/**
+ * Startup checks of a body or response schema: no `__proto__` field (a generated object literal
+ * would set the prototype instead), enums with values, defaults that pass their own schema.
+ */
+function checkShape(schema: Schema, where: string, path = "$"): void {
+    if (schema.kind === "enum" && (schema.values === undefined || schema.values.length === 0)) {
+        throw new SparkusError(ErrorCode.InvalidRouteSchema, `${where}: ${path} is t.enum([]) without values. List at least one.`);
+    }
+    if (schema.default !== undefined) checkDefault(schema, where, path);
     if (schema.shape !== undefined) {
         for (const [key, child] of Object.entries(schema.shape)) {
-            // A "__proto__" key in a generated object literal would set the prototype instead.
             if (key === "__proto__") {
                 throw new SparkusError(ErrorCode.InvalidRouteSchema, `${where}: field "__proto__" is not allowed. Rename it.`);
             }
-            checkKeys(child, where);
+            checkShape(child, where, `${path}.${key}`);
         }
     }
-    if (schema.item !== undefined) checkKeys(schema.item, where);
+    if (schema.item !== undefined) checkShape(schema.item, where, `${path}[]`);
+}
+
+/** Throws InvalidRouteSchema when a schema's default does not pass the schema itself. */
+export function checkDefault(schema: Schema, where: string, path: string): void {
+    const issue = compileValidator(schema)(schema.default);
+    if (issue !== null) {
+        throw new SparkusError(
+            ErrorCode.InvalidRouteSchema,
+            `${where}: default ${JSON.stringify(schema.default)} of ${path} ${issue.message}. Change the default or the schema.`,
+        );
+    }
 }
 
 /**
@@ -126,6 +166,17 @@ function allowNull(emitted: Emitted, v: string, copy: string): Emitted {
     if (emitted.code === "") return emitted;
     if (emitted.out === v) return { code: `if (${v} !== null) {\n${emitted.code}}\n`, out: v };
     return { code: `let ${copy} = null;\nif (${v} !== null) {\n${emitted.code}${copy} = ${emitted.out};\n}\n`, out: copy };
+}
+
+/** `case "a": case "b":` for a switch over an enum's values. */
+export function enumCases(values: readonly string[]): string {
+    return values.map((value) => `case ${JSON.stringify(value)}:`).join(" ");
+}
+
+/** `one of "a", "b"` (`"a"` alone for a single value), for issue messages. */
+export function oneOf(values: readonly string[]): string {
+    const list = values.map((value) => JSON.stringify(value)).join(", ");
+    return values.length === 1 ? list : `one of ${list}`;
 }
 
 /**
@@ -164,6 +215,10 @@ function emitChecks(schema: Schema, fail: (path: string, message: string) => str
             }
             case "boolean":
                 return { code: `if (typeof ${v} !== "boolean") ${failWith(`must be a boolean${orNull}`)}\n`, out: v };
+            case "enum": {
+                const message = `must be ${oneOf(s.values!)}${orNull}`;
+                return { code: `switch (${v}) {\n${enumCases(s.values!)} break;\ndefault: ${failWith(message)}\n}\n`, out: v };
+            }
             case "object": {
                 let code = `if (typeof ${v} !== "object" || ${v} === null || Array.isArray(${v})) ${failWith(`must be an object${orNull}`)}\n`;
                 const fields: Field[] = [];
@@ -171,7 +226,12 @@ function emitChecks(schema: Schema, fail: (path: string, message: string) => str
                     const local = `v${counter++}`;
                     const childPath = `${path} + ${JSON.stringify("." + key)}`;
                     code += `const ${local} = ${v}${prop(key)};\n`;
-                    if (child.optional) {
+                    if (child.default !== undefined && !child.optional) {
+                        // Scalars only: the checked value is the input itself, the default stands in for an absent one.
+                        code += `if (${local} !== undefined) {\n${emit(child, local, childPath).code}}\n`;
+                        const out = `(${local} === undefined ? ${JSON.stringify(child.default)} : ${local})`;
+                        fields.push({ key, out, optional: false });
+                    } else if (child.optional) {
                         const inner = emit(child, local, childPath);
                         if (inner.out === local) {
                             code += `if (${local} !== undefined) {\n${inner.code}}\n`;
@@ -223,7 +283,7 @@ export function compileValidator(schema: Schema): Validator {
  * so `ctx.body` holds exactly what its type says.
  */
 export function compileParser(schema: Schema, invalid: (issue: Issue) => Error, where: string): Parser {
-    checkKeys(schema, where);
+    checkShape(schema, where);
     const fail = (path: string, message: string) => `throw invalid({ path: ${path}, message: ${JSON.stringify(message)} });`;
     const { code, out } = emitChecks(schema, fail, true);
     return new Function("invalid", `return function parse(value) {\n${code}return ${out};\n};`)(invalid) as Parser;
@@ -244,7 +304,7 @@ function describe(value: unknown): string {
  */
 export function compileProjector(schema: Schema, where: string): Projector | null {
     if (schema.kind !== "object" && schema.kind !== "array") return null;
-    checkKeys(schema, where);
+    checkShape(schema, where);
     let counter = 0;
 
     const emit = (s: Schema, v: string, path: string): Emitted =>

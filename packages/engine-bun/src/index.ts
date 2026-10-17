@@ -30,7 +30,7 @@ export interface BunEngineOptions {
 export function bunEngine(options: BunEngineOptions = {}): Engine {
     return {
         name: "bun",
-        async listen(runtime: AppRuntime, { port, hostname }): Promise<EngineServer> {
+        async listen(runtime: AppRuntime, { port, hostname, idleTimeout }): Promise<EngineServer> {
             if (typeof Bun === "undefined") {
                 throw new Error('[SPK1007] The "bun" engine needs the Bun runtime. Use nodeEngine() under Node.');
             }
@@ -48,7 +48,8 @@ export function bunEngine(options: BunEngineOptions = {}): Engine {
                 port,
                 hostname,
                 reusePort: options.reusePort,
-                idleTimeout: options.idleTimeout,
+                // Seconds, at most 255 (Bun's limit); the app option is in milliseconds.
+                idleTimeout: idleTimeout === undefined ? options.idleTimeout : Math.min(255, Math.ceil(idleTimeout / 1000)),
                 // Bun answers a bare 413 above this cap, before any handler runs. Sparkus checks
                 // bodyLimit itself (problem+json 413); the cap only bounds what Bun buffers.
                 maxRequestBodySize: Math.max(runtime.bodyLimit * 2, runtime.bodyLimit + 64 * 1024),

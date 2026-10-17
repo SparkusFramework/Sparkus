@@ -246,7 +246,7 @@ async function startTarget(target: Run, port: number) {
     const entry = isAbsolute(target.entry) ? target.entry : join(target.dir, target.entry);
     const proc = track(Bun.spawn([bin, entry], {
         cwd: target.dir,
-        env: { ...process.env, PORT: String(port), NODE_ENV: "production" },
+        env: { ...process.env, PORT: String(port), NODE_ENV: "production", ...target.env },
         stdout: "ignore",
         stderr: "pipe",
     }));

@@ -80,7 +80,7 @@ describe("checkSchema", () => {
 
     test("only flat scalar fields", () => {
         expect(() => checkSchema(t.object({ tags: t.optional(t.array(t.string())) }), "query", where, [])).toThrow(
-            'field "tags" is t.array(); use t.string(), t.integer(), t.number() or t.boolean()',
+            'field "tags" is t.array(); use t.string(), t.integer(), t.number(), t.boolean() or t.enum()',
         );
         expect(() => checkSchema(t.string(), "query", where, [])).toThrow("must be t.object({ ... })");
     });
@@ -92,5 +92,33 @@ describe("checkSchema", () => {
         expect(() => checkSchema(t.object({ id: t.nullable(t.integer()) }), "params", where, ["id"])).toThrow(
             'field "id" is nullable, but path parameters are strings, never null. Remove t.nullable().',
         );
+    });
+});
+
+describe("enums and defaults in params and query", () => {
+    const Query = t.object({
+        sort: t.enum(["asc", "desc"], { default: "asc" }),
+        page: t.integer({ min: 1, default: 1 }),
+        flag: t.optional(t.enum(["on"])),
+    });
+    const coerce = compileCoercer(Query, "query");
+
+    test("defaults fill absent parameters, enums are checked", () => {
+        expect(coerce({})).toEqual({ sort: "asc", page: 1, flag: undefined });
+        expect(coerce({ sort: "desc", page: "2", flag: "on" })).toEqual({ sort: "desc", page: 2, flag: "on" });
+        expect(issue(() => coerce({ sort: "random" }))).toMatchObject({
+            status: 400,
+            detail: 'Invalid query parameter "sort": must be one of "asc", "desc".',
+        });
+    });
+
+    test("startup checks: path parameters take no default, defaults must pass their schema", () => {
+        expect(() => checkSchema(t.object({ id: t.integer({ default: 1 }) }), "params", "GET /x/:id", ["id"])).toThrow(
+            'params schema field "id" is given a default, but path parameters are always present. Remove the default.',
+        );
+        expect(() => checkSchema(t.object({ page: t.integer({ min: 1, default: 0 }) }), "query", "GET /x", [])).toThrow(
+            "[SPK1017] GET /x: default 0 of query.page must be >= 1. Change the default or the schema.",
+        );
+        expect(() => checkSchema(t.object({ id: t.enum(["a", "b"]) }), "params", "GET /x/:id", ["id"])).not.toThrow();
     });
 });

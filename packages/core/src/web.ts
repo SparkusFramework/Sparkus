@@ -1,6 +1,8 @@
 import type { CompiledRoute } from "./compile.js";
 import { NO_PARAMS, type RequestContext } from "./context.js";
 import { isJsonContentType, malformedJson, payloadTooLarge, unsupportedMediaType, type RenderedError } from "./errors.js";
+import type { Logger } from "./log.js";
+import type { BareResponse, Observer, Span } from "./observe.js";
 import { parseQuery } from "./query.js";
 import { Router } from "./router.js";
 import type { AppRuntime } from "./runtime.js";
@@ -19,13 +21,19 @@ function pathOf(url: string): string {
 export class WebContext implements RequestContext {
     body: any = undefined;
     responseHeaders: Record<string, string> | null = null;
+    startTime = 0;
+    span: Span | undefined = undefined;
     private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
+    private id: string | undefined = undefined;
+    private logger: Logger | undefined = undefined;
+    private controller: AbortController | undefined = undefined;
 
     constructor(
         readonly request: Request,
         public params: Readonly<Record<string, any>>,
         public status: number,
+        readonly app: AppRuntime,
     ) {}
 
     get method(): string {
@@ -51,6 +59,29 @@ export class WebContext implements RequestContext {
 
     get state(): Record<string, unknown> {
         return (this.store ??= {});
+    }
+
+    get requestId(): string {
+        return (this.id ??= this.app.requestId(this.request.headers.get(this.app.requestIdHeader)));
+    }
+
+    get log(): Logger {
+        return (this.logger ??= this.app.log.with({ reqId: this.requestId }));
+    }
+
+    get signal(): AbortSignal {
+        if (this.controller === undefined) {
+            const controller = (this.controller = new AbortController());
+            // Bun aborts the request's signal when the client disconnects.
+            const client = this.request.signal;
+            if (client.aborted) controller.abort(client.reason);
+            else client.addEventListener("abort", () => controller.abort(client.reason), { once: true });
+        }
+        return this.controller.signal;
+    }
+
+    abort(reason: unknown): void {
+        this.controller?.abort(reason);
     }
 
     header(name: string): string | undefined {
@@ -82,8 +113,12 @@ export class WebContext implements RequestContext {
 const TEXT_TYPE = "text/plain; charset=utf-8";
 const BINARY_TYPE = "application/octet-stream";
 
-export function errorResponse(rendered: RenderedError): Response {
-    return new Response(rendered.body, { status: rendered.status, headers: rendered.headers });
+/** A problem+json response. Headers set on the context come along; the error's own win. */
+export function errorResponse(rendered: RenderedError, headers: Record<string, string> | null = null): Response {
+    return new Response(rendered.body, {
+        status: rendered.status,
+        headers: headers === null ? rendered.headers : { ...headers, ...rendered.headers },
+    });
 }
 
 function withHeaders(type: string, headers: Record<string, string> | null): Record<string, string> {
@@ -102,7 +137,12 @@ export function toResponse(
 
     if (typeof value === "object" && value !== null) {
         if (value instanceof Response) {
-            if (headers !== null) for (const name in headers) value.headers.set(name, headers[name]!);
+            if (headers !== null) {
+                for (const name in headers) {
+                    // The handler's own Response wins over headers the app adds to every response.
+                    if (!value.headers.has(name)) value.headers.set(name, headers[name]!);
+                }
+            }
             return value;
         }
         if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
@@ -127,13 +167,14 @@ export type WebHandler = (request: Request, params: Readonly<Record<string, stri
 
 /** Request -> Response handler for one route. Errors never escape: they become problem+json responses. */
 export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): WebHandler {
+    if (runtime.observer !== null) return createObservedHandler(route, runtime, runtime.observer);
     const { run, status } = route;
     // Bun charges ~80 ns for reading any init object, even { status: 200 }: pass none when the default fits.
     const init: ResponseInit | undefined = status === 200 ? undefined : { status };
 
     return (request, params) => {
-        const ctx = new WebContext(request, params, status);
-        const fail = (error: unknown) => errorResponse(runtime.renderError(error, ctx));
+        const ctx = new WebContext(request, params, status, runtime);
+        const fail = (error: unknown) => errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders);
         try {
             const out = run(ctx);
             if (out instanceof Promise) {
@@ -152,10 +193,69 @@ export function createWebHandler(route: CompiledRoute, runtime: AppRuntime): Web
     };
 }
 
+/** Same as the plain handler, with the observer around it: start once routed, finish with the final status. */
+function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observer: Observer): WebHandler {
+    const { run, status, path } = route;
+    const init: ResponseInit | undefined = status === 200 ? undefined : { status };
+    const activate = observer.activate;
+
+    return (request, params) => {
+        const ctx = new WebContext(request, params, status, runtime);
+        observer.start(ctx, path);
+        const done = (response: Response) => {
+            observer.finish(ctx, response.status, path);
+            return response;
+        };
+        const fail = (error: unknown) => done(errorResponse(runtime.renderError(error, ctx), ctx.responseHeaders));
+        try {
+            const out = activate !== undefined && ctx.span !== undefined ? activate(ctx.span, () => run(ctx)) : run(ctx);
+            if (out instanceof Promise) {
+                return out.then((value) => {
+                    try {
+                        return done(toResponse(value, ctx, init, status));
+                    } catch (error) {
+                        return fail(error);
+                    }
+                }, fail);
+            }
+            return done(toResponse(out, ctx, init, status));
+        } catch (error) {
+            return fail(error);
+        }
+    };
+}
+
+function bareResponse(bare: BareResponse): Response {
+    return new Response(null, bare);
+}
+
+/**
+ * Answer to a request no route takes: CORS preflight, 405 or 404. Observed like any request.
+ * `allow` lists the methods of the path, null when no route has it.
+ */
+export function unroutedResponse(request: Request, method: string, path: string, allow: string | null, runtime: AppRuntime): Response {
+    const observer = runtime.observer;
+    if (observer === null) {
+        return errorResponse(allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow));
+    }
+    const ctx = new WebContext(request, NO_PARAMS, 404, runtime);
+    observer.start(ctx, undefined);
+    const preflight = observer.preflight(ctx, allow);
+    const response =
+        preflight !== null
+            ? bareResponse(preflight)
+            : errorResponse(
+                  allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow),
+                  ctx.responseHeaders,
+              );
+    observer.finish(ctx, response.status, undefined);
+    return response;
+}
+
 /**
  * A complete web-standard handler, routed by the Sparkus router. It is
  * `app.fetch`, the Bun engine's fallback for anything its native router
- * leaves out (404, 405, backtracking), and the in-memory test client.
+ * leaves out (404, 405, preflight, backtracking), and the in-memory test client.
  */
 export function createFetchHandler(runtime: AppRuntime): (request: Request) => Promise<Response> {
     const router = new Router<WebHandler>();
@@ -165,12 +265,7 @@ export function createFetchHandler(runtime: AppRuntime): (request: Request) => P
         const method = request.method;
         const path = pathOf(request.url);
         const match = router.find(method, path);
-        if (match === null) {
-            const allow = router.allowed(path);
-            return errorResponse(
-                allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow),
-            );
-        }
+        if (match === null) return unroutedResponse(request, method, path, router.allowed(path), runtime);
         const response = await match.handler(request, match.params);
         return method === "HEAD" ? new Response(null, response) : response;
     };

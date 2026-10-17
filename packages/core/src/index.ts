@@ -2,6 +2,7 @@
 // Engine authors import "@sparkus/core/engine".
 
 export { createApp, SparkusApp, type AppOptions, type ListenOptions, type ListeningInfo, type RouteInfo } from "./app.js";
+export { config, type ConfigOptions } from "./config.js";
 export type { Ctx, HandlerResult, HttpMethod, RouteOptions } from "./context.js";
 export {
     Controller,
@@ -32,6 +33,19 @@ export {
     type HttpErrorOptions,
     type ProblemDetails,
 } from "./errors.js";
+export type { HealthCheck, HealthOptions } from "./health.js";
+export { Logger, type LogFields, type LoggerOptions, type LogLevel, type LogThreshold } from "./log.js";
+export {
+    SECURITY_HEADERS,
+    type Attributes,
+    type AttributeValue,
+    type CorsOptions,
+    type Histogram,
+    type Meter,
+    type Span,
+    type TelemetryOptions,
+    type Tracer,
+} from "./observe.js";
 export type {
     Guard,
     GuardFn,
@@ -42,6 +56,6 @@ export type {
     Next,
 } from "./pipeline.js";
 export type { OpenApiOptions } from "./openapi.js";
-export type { ErrorMapper, Logger } from "./runtime.js";
+export type { ErrorMapper } from "./runtime.js";
 export { t, type AnySchema, type Infer, type Issue, type Schema } from "./schema.js";
 export type { StandardSchemaV1 } from "./standard.js";

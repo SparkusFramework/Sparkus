@@ -74,4 +74,16 @@ class UserController {
     }
 }
 
-await createApp({ controllers: [HelloController, UserController] }).listen({ port: PORT, hostname: HOST });
+// SPARKUS_BENCH_PROFILE=production (targets sparkus-prod-*): the options of a production app.
+// The bench sends no Origin header: CORS costs its check, not its headers.
+const production = process.env.SPARKUS_BENCH_PROFILE === "production";
+await createApp({
+    controllers: [HelloController, UserController],
+    ...(production && {
+        logger: { requests: true },
+        securityHeaders: true,
+        requestId: true,
+        cors: { origin: ["https://app.example.com"] },
+        health: true,
+    }),
+}).listen({ port: PORT, hostname: HOST });
