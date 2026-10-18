@@ -90,3 +90,20 @@ test("nullable schemas are type lists (JSON Schema 2020-12)", () => {
         required: ["manager"],
     });
 });
+
+test("enums list their values, defaults are documented and make a field optional", () => {
+    const schema = t.object({
+        status: t.enum(["draft", "published"], { default: "draft" }),
+        label: t.nullable(t.enum(["hot"])),
+        page: t.integer({ min: 1, default: 1 }),
+    });
+    expect(toJsonSchema(schema)).toEqual({
+        type: "object",
+        properties: {
+            status: { type: "string", enum: ["draft", "published"], default: "draft" },
+            label: { type: ["string", "null"], enum: ["hot", null] },
+            page: { type: "integer", minimum: 1, default: 1 },
+        },
+        required: ["label"],
+    });
+});

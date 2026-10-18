@@ -25,8 +25,11 @@ import { z } from "zod";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Lifecycle hooks and logged errors, in order. */
+/** Lifecycle hooks, in order. */
 export const events: string[] = [];
+
+/** Log lines of the fixture apps, parsed. */
+export const logs: Array<Record<string, any>> = [];
 
 export const GREETING = token<string>("GREETING", () => "hello");
 
@@ -188,6 +191,12 @@ class RootController {
     async slow() {
         await delay(300);
         return { slow: true };
+    }
+
+    @Get("/sleep")
+    async sleep(ctx: Ctx) {
+        await delay(Number(ctx.query.ms));
+        return { slept: true };
     }
 
     @Get("/hang")
@@ -444,6 +453,6 @@ export function fixtureOptions(): Omit<AppOptions, "engine"> {
         onError: (error) => (error instanceof MappedError ? HttpError.conflict("Mapped by onError.") : undefined),
         exposeErrors: true,
         bodyLimit: 1024,
-        logger: { error: (message) => void events.push(`log: ${message}`) },
+        logger: { format: "json", write: (line) => void logs.push(JSON.parse(line)) },
     };
 }

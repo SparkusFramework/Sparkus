@@ -1,5 +1,5 @@
 import { ErrorCode, HttpError, SparkusError } from "./errors.js";
-import type { Issue, Schema } from "./schema.js";
+import { checkDefault, defaultAndOptional, enumCases, oneOf, type Issue, type Schema } from "./schema.js";
 
 /**
  * Path parameters and query values arrive as strings. A route can declare
@@ -13,7 +13,7 @@ export type Coercer = (raw: Readonly<Record<string, string | undefined>>) => Rec
 
 export type Source = "params" | "query";
 
-const SCALARS = new Set(["string", "integer", "number", "boolean"]);
+const SCALARS = new Set(["string", "integer", "number", "boolean", "enum"]);
 
 export function invalidRequest(source: Source, issue: Issue): HttpError {
     // issue.path is "query.page": the detail names the parameter as the client wrote it.
@@ -41,16 +41,23 @@ export function checkSchema(schema: Schema, source: Source, where: string, pathP
     }
     for (const [key, field] of Object.entries(schema.shape)) {
         if (!SCALARS.has(field.kind)) {
-            const use = "use t.string(), t.integer(), t.number() or t.boolean()";
+            const use = "use t.string(), t.integer(), t.number(), t.boolean() or t.enum()";
             throw invalidSchema(where, source, `field "${key}" is t.${field.kind}(); ${use}`);
         }
         if (field.nullable === true) {
             const reason = `field "${key}" is nullable, but ${source === "params" ? "path" : "query"} parameters are strings, never null`;
             throw invalidSchema(where, source, `${reason}. Remove t.nullable()${source === "query" ? ", use t.optional() for a missing value" : ""}`);
         }
-        if (source === "params" && field.optional) {
-            const reason = `field "${key}" is optional, but path parameters are always present`;
-            throw invalidSchema(where, source, `${reason}. Remove t.optional()`);
+        if (source === "params" && (field.optional || field.default !== undefined)) {
+            const reason = `field "${key}" is ${field.optional ? "optional" : "given a default"}, but path parameters are always present`;
+            throw invalidSchema(where, source, `${reason}. Remove ${field.optional ? "t.optional()" : "the default"}`);
+        }
+        if (field.kind === "enum" && (field.values === undefined || field.values.length === 0)) {
+            throw invalidSchema(where, source, `field "${key}" is t.enum([]) without values. List at least one`);
+        }
+        if (field.default !== undefined) {
+            if (field.optional) throw defaultAndOptional(where, `${source}.${key}`);
+            checkDefault(field, where, `${source}.${key}`);
         }
     }
     if (source === "params") {
@@ -78,7 +85,8 @@ export function compileCoercer(schema: Schema, source: Source): Coercer {
         const { min, max } = field.bounds;
 
         code += `let ${out} = ${raw};\n`;
-        code += field.optional ? `if (${out} !== undefined) {\n` : `if (${out} === undefined) ${fail("is required")}\n{\n`;
+        if (field.default !== undefined) code += `if (${out} === undefined) ${out} = ${JSON.stringify(field.default)};\nelse {\n`;
+        else code += field.optional ? `if (${out} !== undefined) {\n` : `if (${out} === undefined) ${fail("is required")}\n{\n`;
         switch (field.kind) {
             case "string":
                 if (min !== undefined) code += `if (${out}.length < ${min}) ${fail(`must have at least ${min} characters`)}\n`;
@@ -97,6 +105,9 @@ export function compileCoercer(schema: Schema, source: Source): Coercer {
                 code += `if (${out} === "true" || ${out} === "1") ${out} = true;\n`;
                 code += `else if (${out} === "false" || ${out} === "0") ${out} = false;\n`;
                 code += `else ${fail('must be "true", "false", "1" or "0"')}\n`;
+                break;
+            case "enum":
+                code += `switch (${out}) {\n${enumCases(field.values!)} break;\ndefault: ${fail(`must be ${oneOf(field.values!)}`)}\n}\n`;
                 break;
         }
         if (field.kind === "integer" || field.kind === "number") {

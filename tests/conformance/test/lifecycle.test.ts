@@ -36,6 +36,17 @@ for (const engine of ["bun", "node"] as const) {
             expect(await hanging).toBe("cut");
         });
 
+        test("a handler slower than idleTimeout still answers (Bun's idle timer runs during handlers)", async () => {
+            const app = createApp({ ...fixtureOptions(), engine });
+            const { port } = await app.listen({ port: 0, hostname: "127.0.0.1", signals: false, idleTimeout: 1_000 });
+            try {
+                const res = await fetch(`http://127.0.0.1:${port}/sleep?ms=2500`);
+                expect(res.status).toBe(200);
+            } finally {
+                await app.close();
+            }
+        }, 10_000);
+
         test("close() is idempotent", async () => {
             const app = createApp({ ...fixtureOptions(), engine });
             await app.listen({ port: 0, hostname: "127.0.0.1", signals: false });
@@ -59,6 +70,22 @@ describe.skipIf(process.platform === "win32")("SIGTERM on a real process", () =>
             expect(await inFlight).toBe(200);
             const report = JSON.parse((await nextLine())!);
             expect(report.events.slice(-2)).toEqual(["UserService.onShutdown", "Clock.onShutdown"]);
+            await proc.exited;
+            expect(proc.signalCode ?? proc.exitCode).toBe("SIGTERM");
+        });
+
+        test(`${label}: shutdownDelay keeps serving with readiness failing, then exits`, async () => {
+            const { proc, base } = await spawnServer(runtime, { FIXTURE: "production", SHUTDOWN_DELAY: "400" });
+            expect((await fetch(base + "/ready")).status).toBe(200);
+            proc.kill("SIGTERM");
+            await Bun.sleep(100);
+
+            const ready = await fetch(base + "/ready");
+            expect(ready.status).toBe(503);
+            expect(((await ready.json()) as { detail: string }).detail).toBe("The app is shutting down.");
+            expect((await fetch(base + "/health")).status).toBe(200);
+            expect((await fetch(base + "/items/1")).status).toBe(200);
+
             await proc.exited;
             expect(proc.signalCode ?? proc.exitCode).toBe("SIGTERM");
         });

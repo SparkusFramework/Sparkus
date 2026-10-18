@@ -50,8 +50,32 @@ await createApp({ controllers: [UserController] }).listen({ port: 3000 });
 - **One schema, everything typed.** `params`, `query`, `body` and `response` schemas type the handler, convert and validate inputs (`/users/abc` is a 400 naming `params.id`), and produce the OpenAPI 3.1 document (`app.openapi()`). What a schema does not declare is dropped: a client cannot add a `role` to a body, an entity's `passwordHash` never reaches a response. Already on Zod, Valibot or ArkType? Their schemas work too ([Standard Schema](https://standardschema.dev)).
 - **Errors anyone can act on.** HTTP errors are `application/problem+json` (RFC 9457) with stable codes. Startup errors (`SPK1xxx`) say what is wrong and how to fix it: dependency cycles show their full path, duplicate routes name both handlers, a 404 in development suggests the route you meant. Reference: [docs/errors.md](./docs/errors.md).
 - **Built for agents.** `sparkus init` scaffolds `AGENTS.md`, `CLAUDE.md`, skills and a check hook; `sparkus check --json` validates the wiring without starting the server; [llms.txt](./llms.txt) is the whole API on one page.
-- **Production basics built in.** Lifecycle hooks (`onInit`, `onShutdown`), graceful shutdown on SIGTERM with connection draining, body limits, no stack traces in responses.
+- **Production ready, nothing to install.** Typed configuration from the environment (`config()`, the app refuses to start and lists every missing variable), structured JSON logs with per-module levels and request ids, CORS, security headers, request timeouts with `ctx.signal`, health and readiness probes, graceful shutdown that fails readiness first, and OpenTelemetry spans and metrics through `@opentelemetry/api` without depending on it. Each one is an option, off by default, and costs nothing when off.
 - **Zero runtime dependencies**, checked in CI.
+
+## Production
+
+```ts
+import { config, createApp, t } from "sparkus";
+
+export const AppConfig = config({
+    DATABASE_URL: t.string({ min: 1 }),
+    PORT: t.integer({ default: 3000 }),
+    MODE: t.enum(["live", "sandbox"], { default: "sandbox" }),
+}); // inject(AppConfig).DATABASE_URL in a service; a missing variable stops the app with SPK1018
+
+const app = createApp({
+    controllers: [UserController],
+    logger: { requests: true },                           // JSON lines; LOG_LEVEL=info,db=debug
+    cors: { origin: ["https://app.example.com"], credentials: true },
+    securityHeaders: true,                                // CSP, HSTS, nosniff, frame-options...
+    requestId: true,                                      // x-request-id in, out, and in every log line
+    health: true,                                         // GET /health, GET /ready (every HealthCheck service)
+    requestTimeout: 30_000,                               // 503 and ctx.signal aborted past 30 s
+    telemetry: { tracer: trace.getTracer("api"), meter: metrics.getMeter("api") },
+});
+await app.listen({ shutdownDelay: 5_000 });               // on SIGTERM: /ready fails, then drain
+```
 
 ## Packages
 

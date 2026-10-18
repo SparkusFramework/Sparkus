@@ -1,6 +1,15 @@
-import { createServer, type IncomingMessage, type ServerOptions, type ServerResponse } from "node:http";
+import {
+    createServer,
+    validateHeaderName,
+    validateHeaderValue,
+    type IncomingMessage,
+    type ServerOptions,
+    type ServerResponse,
+} from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+    NO_PARAMS,
+    RequestExtras,
     Router,
     isJsonContentType,
     malformedJson,
@@ -11,9 +20,11 @@ import {
     type CompiledRoute,
     type Engine,
     type EngineServer,
+    type Observer,
     type RenderedError,
     type RequestContext,
 } from "@sparkus/core/engine";
+import type { Logger } from "@sparkus/core";
 
 type Params = Readonly<Record<string, string>>;
 type NodeHandler = (req: IncomingMessage, res: ServerResponse, params: Params, path: string, rawQuery: string) => void;
@@ -27,13 +38,16 @@ class NodeContext implements RequestContext {
     responseHeaders: Record<string, string> | null = null;
     private parsedQuery: Record<string, any> | undefined = undefined;
     private store: Record<string, unknown> | undefined = undefined;
+    private more: RequestExtras | undefined = undefined;
 
     constructor(
         readonly req: IncomingMessage,
+        readonly res: ServerResponse,
         readonly path: string,
         public params: Readonly<Record<string, any>>,
         private readonly rawQuery: string,
         public status: number,
+        readonly app: AppRuntime,
     ) {}
 
     get method(): string {
@@ -52,9 +66,40 @@ class NodeContext implements RequestContext {
         return (this.store ??= {});
     }
 
+    get extras(): RequestExtras {
+        return (this.more ??= new RequestExtras());
+    }
+
+    get requestId(): string {
+        const extras = this.extras;
+        return (extras.id ??= this.app.requestId(this.header(this.app.requestIdHeader)));
+    }
+
+    get log(): Logger {
+        const extras = this.extras;
+        return (extras.logger ??= this.app.log.with({ reqId: this.requestId }));
+    }
+
+    get signal(): AbortSignal {
+        const extras = this.extras;
+        if (extras.controller === undefined) {
+            const controller = (extras.controller = new AbortController());
+            const res = this.res;
+            // "close" also follows a complete response: only an unfinished one means the client left.
+            res.once("close", () => {
+                if (!res.writableFinished) controller.abort(new DOMException("The client disconnected.", "AbortError"));
+            });
+        }
+        return extras.controller.signal;
+    }
+
+    abort(reason: unknown): void {
+        // Created here too: a handler that reads ctx.signal after the timeout gets it aborted.
+        (this.extras.controller ??= new AbortController()).abort(reason);
+    }
+
     header(name: string): string | undefined {
-        const value = this.req.headers[name.toLowerCase()];
-        return typeof value === "string" ? value : value === undefined ? undefined : value.join(", ");
+        return readHeader(this.req, name.toLowerCase());
     }
 
     setHeader(name: string, value: string): void {
@@ -63,9 +108,9 @@ class NodeContext implements RequestContext {
 
     readBody(limit: number): Promise<unknown> {
         const req = this.req;
-        const type = req.headers["content-type"];
+        const type = readHeader(req, "content-type");
         if (!isJsonContentType(type)) return Promise.reject(unsupportedMediaType(type));
-        const declared = req.headers["content-length"];
+        const declared = readHeader(req, "content-length");
         if (declared !== undefined && Number(declared) > limit) return Promise.reject(payloadTooLarge(limit));
 
         return new Promise((resolve, reject) => {
@@ -100,13 +145,60 @@ class NodeContext implements RequestContext {
     }
 }
 
-function sendError(res: ServerResponse, rendered: RenderedError): void {
+/**
+ * A request header by lowercase name, read from `rawHeaders`. Node builds `req.headers` on first
+ * access, every header at once: a request that reads one header (an id, an origin, a token)
+ * would pay for all of them. A repeated header falls back to Node's own joining rules.
+ */
+function readHeader(req: IncomingMessage, name: string): string | undefined {
+    const raw = req.rawHeaders;
+    let found: string | undefined;
+    for (let i = 0; i < raw.length; i += 2) {
+        const key = raw[i]!;
+        if (key.length !== name.length || (key !== name && key.toLowerCase() !== name)) continue;
+        if (found !== undefined) {
+            const value = req.headers[name];
+            return typeof value === "string" ? value : value?.join(", ");
+        }
+        found = raw[i + 1];
+    }
+    return found;
+}
+
+/** Sends a problem+json response. Headers set on the context come along; the error's own win. */
+function sendError(res: ServerResponse, rendered: RenderedError, headers: Record<string, string> | null = null): void {
     if (res.headersSent) {
         res.destroy();
         return;
     }
-    res.writeHead(rendered.status, { ...rendered.headers, "content-length": Buffer.byteLength(rendered.body) });
+    const length = Buffer.byteLength(rendered.body);
+    if (headers === null) {
+        res.writeHead(rendered.status, { ...rendered.headers, "content-length": length });
+    } else {
+        try {
+            res.writeHead(rendered.status, { ...headers, ...rendered.headers, "content-length": length });
+        } catch {
+            // A header the handler set is what Node refused (a newline in a value): send the error without it.
+            res.writeHead(rendered.status, { ...validHeaders(headers), ...rendered.headers, "content-length": length });
+        }
+    }
     res.end(rendered.body);
+}
+
+/** The headers Node accepts, the others dropped. Error path only. */
+function validHeaders(headers: Record<string, string>): Record<string, string> {
+    const valid: Record<string, string> = {};
+    for (const name in headers) {
+        try {
+            const value = headers[name]!;
+            validateHeaderName(name);
+            validateHeaderValue(name, value);
+            valid[name] = value;
+        } catch {
+            // Dropped.
+        }
+    }
+    return valid;
 }
 
 function writeBody(res: ServerResponse, status: number, type: string, body: string | Uint8Array, headers: Record<string, string> | null): void {
@@ -128,7 +220,11 @@ async function sendResponse(res: ServerResponse, ctx: NodeContext, response: Res
     });
     const cookies = response.headers.getSetCookie();
     if (cookies.length > 0) headers["set-cookie"] = cookies;
-    if (ctx.responseHeaders !== null) Object.assign(headers, ctx.responseHeaders);
+    const extra = ctx.responseHeaders;
+    if (extra !== null) {
+        // The handler's own Response wins over headers set on the context.
+        for (const name in extra) if (headers[name] === undefined) headers[name] = extra[name]!;
+    }
     headers["content-length"] = String(body.byteLength);
     res.writeHead(response.status, headers);
     res.end(body);
@@ -142,7 +238,7 @@ function send(res: ServerResponse, ctx: NodeContext, value: unknown, runtime: Ap
     if (typeof value === "object" && value !== null) {
         if (value instanceof Uint8Array) return writeBody(res, status, BINARY_TYPE, value, headers);
         if (value instanceof Response) {
-            sendResponse(res, ctx, value).catch((error) => sendError(res, runtime.renderError(error, ctx)));
+            sendResponse(res, ctx, value).catch((error) => sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders));
             return;
         }
         if (value instanceof ArrayBuffer) return writeBody(res, status, BINARY_TYPE, new Uint8Array(value), headers);
@@ -157,11 +253,35 @@ function send(res: ServerResponse, ctx: NodeContext, value: unknown, runtime: Ap
     writeBody(res, status, JSON_TYPE, JSON.stringify(value), headers);
 }
 
+/** Runs the pipeline and sends what it gives, or the error it throws. */
+function dispatch(res: ServerResponse, ctx: NodeContext, runtime: AppRuntime, run: CompiledRoute["run"]): void {
+    try {
+        const out = run(ctx);
+        if (out instanceof Promise) {
+            out.then(
+                (value) => {
+                    try {
+                        send(res, ctx, value, runtime);
+                    } catch (error) {
+                        sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders);
+                    }
+                },
+                (error) => sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders),
+            );
+        } else {
+            send(res, ctx, out, runtime);
+        }
+    } catch (error) {
+        sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders);
+    }
+}
+
 function createHandler(route: CompiledRoute, runtime: AppRuntime): NodeHandler {
+    if (runtime.observer !== null) return createObservedHandler(route, runtime, runtime.observer);
     const { run, status } = route;
 
     return (req, res, params, path, rawQuery) => {
-        const ctx = new NodeContext(req, path, params, rawQuery, status);
+        const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
         try {
             const out = run(ctx);
             if (out instanceof Promise) {
@@ -170,18 +290,54 @@ function createHandler(route: CompiledRoute, runtime: AppRuntime): NodeHandler {
                         try {
                             send(res, ctx, value, runtime);
                         } catch (error) {
-                            sendError(res, runtime.renderError(error, ctx));
+                            sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders);
                         }
                     },
-                    (error) => sendError(res, runtime.renderError(error, ctx)),
+                    (error) => sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders),
                 );
             } else {
                 send(res, ctx, out, runtime);
             }
         } catch (error) {
-            sendError(res, runtime.renderError(error, ctx));
+            sendError(res, runtime.renderError(error, ctx), ctx.responseHeaders);
         }
     };
+}
+
+/** Same as the plain handler, observed: start once routed, finish when the response is done (or cut). */
+function createObservedHandler(route: CompiledRoute, runtime: AppRuntime, observer: Observer): NodeHandler {
+    const { status, path: routePath } = route;
+    const run = observer.enter(route.run);
+    const finishes = observer.finishes;
+
+    return (req, res, params, path, rawQuery) => {
+        const ctx = new NodeContext(req, res, path, params, rawQuery, status, runtime);
+        observer.start(ctx, routePath, true);
+        // Closed before a response (client gone, forced shutdown): 499, as nginx logs it. "close" fires
+        // once: on() spares the wrapper once() allocates. Headers-only observers have nothing to finish.
+        if (finishes) res.on("close", () => observer.finish(ctx, res.headersSent ? res.statusCode : 499, routePath));
+        dispatch(res, ctx, runtime, run);
+    };
+}
+
+/** CORS preflight, 405 or 404, observed like any request when the app observes requests. */
+function sendUnrouted(req: IncomingMessage, res: ServerResponse, path: string, rawQuery: string, allow: string | null, runtime: AppRuntime): void {
+    const method = req.method!;
+    const observer = runtime.observer;
+    if (observer === null) {
+        sendError(res, allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow));
+        return;
+    }
+    const ctx = new NodeContext(req, res, path, NO_PARAMS, rawQuery, 404, runtime);
+    observer.start(ctx, undefined, true);
+    const preflight = observer.preflight(ctx, allow);
+    if (preflight !== null) {
+        res.writeHead(preflight.status, preflight.headers);
+        res.end();
+    } else {
+        sendError(res, allow === null ? runtime.notFound(method, path) : runtime.methodNotAllowed(method, path, allow), ctx.responseHeaders);
+    }
+    observer.finish(ctx, res.statusCode, undefined);
 }
 
 export interface NodeEngineOptions {
@@ -196,7 +352,7 @@ export interface NodeEngineOptions {
 export function nodeEngine(options: NodeEngineOptions = {}): Engine {
     return {
         name: "node",
-        async listen(runtime, { port, hostname }): Promise<EngineServer> {
+        async listen(runtime, { port, hostname, idleTimeout }): Promise<EngineServer> {
             const router = new Router<NodeHandler>();
             for (const route of runtime.routes) router.add(route.method, route.path, createHandler(route, runtime));
 
@@ -204,17 +360,15 @@ export function nodeEngine(options: NodeEngineOptions = {}): Engine {
                 const url = req.url!;
                 const index = url.indexOf("?");
                 const path = index === -1 ? url : url.slice(0, index);
+                const rawQuery = index === -1 ? "" : url.slice(index + 1);
                 const match = router.find(req.method!, path);
                 if (match !== null) {
-                    match.handler(req, res, match.params, path, index === -1 ? "" : url.slice(index + 1));
+                    match.handler(req, res, match.params, path, rawQuery);
                     return;
                 }
-                const allow = router.allowed(path);
-                sendError(
-                    res,
-                    allow === null ? runtime.notFound(req.method!, path) : runtime.methodNotAllowed(req.method!, path, allow),
-                );
+                sendUnrouted(req, res, path, rawQuery, router.allowed(path), runtime);
             });
+            if (idleTimeout !== undefined) server.keepAliveTimeout = idleTimeout;
 
             await new Promise<void>((resolve, reject) => {
                 server.once("error", reject);

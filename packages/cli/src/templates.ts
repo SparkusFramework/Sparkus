@@ -43,7 +43,9 @@ export function projectFiles(name: string): Record<string, string> {
             4,
         ),
         ".gitignore": "node_modules\ndist\n.env\n",
+        ".env.example": ENV_EXAMPLE,
         "src/app.ts": APP,
+        "src/config.ts": CONFIG,
         "src/main.ts": MAIN,
         "src/users/users.service.ts": USERS_SERVICE,
         "src/users/users.controller.ts": USERS_CONTROLLER,
@@ -74,30 +76,71 @@ export function projectFiles(name: string): Record<string, string> {
     return files;
 }
 
-const APP = `import { createApp, type Provider } from "sparkus";
+const APP = `import { createApp, type AppOptions } from "sparkus";
 import { UserController } from "./users/users.controller.ts";
 
-// Every controller is listed here. Services are not: inject() creates them.
-export const controllers = [UserController];
+// Tests build the same app: createTestApp({ ...options, overrides }).
+export const options: AppOptions = {
+    // Every controller is listed here. Services are not: inject() creates them.
+    controllers: [UserController],
+    // Values for token()s. Configuration is not one: it lives in src/config.ts.
+    providers: [],
+    // One JSON line per request; LOG_LEVEL=debug (or info,users=debug) changes the levels.
+    logger: { requests: true },
+    // CSP, HSTS, nosniff... on every response. Add cors: { origin: [...] } for browser clients.
+    securityHeaders: true,
+    // x-request-id in every response, and in every log line of the request.
+    requestId: true,
+    // GET /health (liveness) and GET /ready (calls every service that implements HealthCheck).
+    health: true,
+    // 503 SPK2008 after 30 s; ctx.signal aborts. A route can set its own: { timeout: 60_000 }.
+    requestTimeout: 30_000,
+};
 
-// Values for token()s (config, secrets). Tests reuse both lists: createTestApp({ controllers, providers }).
-export const providers: Provider[] = [];
-
-export default createApp({ controllers, providers });
+export default createApp(options);
 `;
 
 const MAIN = `import app from "./app.ts";
+import { AppConfig } from "./config.ts";
 
-const { url, engine } = await app.listen();
-console.log(\`__NAME__ listening on \${url} (\${engine})\`);
+const { PORT, SHUTDOWN_DELAY } = app.get(AppConfig);
+// Logs "Listening on ...". On SIGTERM: /ready fails for SHUTDOWN_DELAY ms, then in-flight requests finish.
+await app.listen({ port: PORT, shutdownDelay: SHUTDOWN_DELAY });
 `;
 
-const USERS_SERVICE = `export interface User {
+const CONFIG = `import { config, t } from "sparkus";
+
+// Environment variables, typed and checked at startup: a missing or invalid one stops the app
+// with SPK1018, which lists them all. Bun reads .env itself. Read with inject(AppConfig).
+// Tests replace values with AppConfig.override({ ... }).
+export const AppConfig = config(
+    {
+        PORT: t.integer({ min: 0, max: 65535, default: 3000 }),
+        // Behind a load balancer, a few seconds: it stops sending traffic once /ready fails.
+        SHUTDOWN_DELAY: t.integer({ min: 0, default: 0 }),
+        USERS_PAGE_SIZE: t.integer({ min: 1, max: 100, default: 20 }),
+    },
+    { name: "AppConfig" },
+);
+`;
+
+const ENV_EXAMPLE = `# Copy to .env. Every variable is declared in src/config.ts.
+PORT=3000
+SHUTDOWN_DELAY=0
+USERS_PAGE_SIZE=20
+`;
+
+const USERS_SERVICE = `import { Logger, inject } from "sparkus";
+import { AppConfig } from "../config.ts";
+
+export interface User {
     id: number;
     name: string;
 }
 
 export class UserService {
+    private readonly config = inject(AppConfig);
+    private readonly log = inject(Logger).child("users");
     private readonly users = new Map<number, User>([[1, { id: 1, name: "Ada" }]]);
     private nextId = 2;
 
@@ -105,9 +148,15 @@ export class UserService {
         return this.users.get(id);
     }
 
+    list(page: number): User[] {
+        const size = this.config.USERS_PAGE_SIZE;
+        return [...this.users.values()].slice((page - 1) * size, page * size);
+    }
+
     create(name: string): User {
         const user = { id: this.nextId++, name };
         this.users.set(user.id, user);
+        this.log.info("User created", { userId: user.id });
         return user;
     }
 }
@@ -116,12 +165,19 @@ export class UserService {
 const USERS_CONTROLLER = `import { Controller, Get, HttpError, Post, inject, t, type Ctx } from "sparkus";
 import { UserService } from "./users.service.ts";
 
-const GetUser = { params: t.object({ id: t.integer({ min: 1 }) }) };
-const CreateUser = { body: t.object({ name: t.string({ min: 1, max: 100 }) }), status: 201 };
+const User = t.object({ id: t.integer(), name: t.string() });
+const ListUsers = { query: t.object({ page: t.integer({ min: 1, default: 1 }) }), response: t.array(User) };
+const GetUser = { params: t.object({ id: t.integer({ min: 1 }) }), response: User };
+const CreateUser = { body: t.object({ name: t.string({ min: 1, max: 100 }) }), response: User, status: 201 };
 
 @Controller("/users")
 export class UserController {
     private readonly users = inject(UserService);
+
+    @Get("", ListUsers)
+    list(ctx: Ctx<typeof ListUsers>) {
+        return this.users.list(ctx.query.page);
+    }
 
     @Get("/:id", GetUser)
     get(ctx: Ctx<typeof GetUser>) {
@@ -139,33 +195,45 @@ export class UserController {
 
 const USERS_TEST = `import { createTestApp } from "@sparkus/testing";
 import { expect, test } from "bun:test";
-import { controllers, providers } from "../app.ts";
+import { options } from "../app.ts";
+import { AppConfig } from "../config.ts";
 import { UserService } from "./users.service.ts";
 
 test("GET /users/:id", async () => {
-    const app = await createTestApp({ controllers, providers });
+    const app = await createTestApp(options);
     const res = await app.inject({ url: "/users/1" });
     expect(res.status).toBe(200);
     expect(res.json()).toEqual({ id: 1, name: "Ada" });
 });
 
+test("GET /users pages with the default page size", async () => {
+    const app = await createTestApp(options);
+    expect((await app.inject({ url: "/users" })).json()).toEqual([{ id: 1, name: "Ada" }]);
+    expect((await app.inject({ url: "/users?page=2" })).json()).toEqual([]);
+});
+
+test("the page size comes from the configuration", async () => {
+    const app = await createTestApp({ ...options, overrides: [AppConfig.override({ USERS_PAGE_SIZE: 1 })] });
+    await app.inject({ method: "POST", url: "/users", body: { name: "Grace" } });
+    expect((await app.inject({ url: "/users?page=2" })).json()).toEqual([{ id: 2, name: "Grace" }]);
+});
+
 test("unknown user is a 404 with a code", async () => {
-    const app = await createTestApp({ controllers, providers });
+    const app = await createTestApp(options);
     const res = await app.inject({ url: "/users/99" });
     expect(res.status).toBe(404);
     expect(res.json().code).toBe("USER_NOT_FOUND");
 });
 
 test("POST /users validates the body", async () => {
-    const app = await createTestApp({ controllers, providers });
+    const app = await createTestApp(options);
     expect((await app.inject({ method: "POST", url: "/users", body: { name: "Grace" } })).status).toBe(201);
     expect((await app.inject({ method: "POST", url: "/users", body: { name: "" } })).json().code).toBe("SPK2004");
 });
 
 test("a fake service replaces the real one", async () => {
     const app = await createTestApp({
-        controllers,
-        providers,
+        ...options,
         overrides: [{ provide: UserService, useValue: { find: () => ({ id: 7, name: "Fake" }) } }],
     });
     expect((await app.inject({ url: "/users/7" })).json()).toEqual({ id: 7, name: "Fake" });
@@ -188,22 +256,24 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 ## Layout
 
-- \`src/app.ts\` lists every controller and provider and exports the app. \`src/main.ts\` starts it.
+- \`src/app.ts\` exports \`options\` (every controller and provider, the production options) and the app. \`src/main.ts\` starts it. \`src/config.ts\` declares every environment variable.
 - One feature per folder: \`src/<feature>/<feature>.controller.ts\`, \`<feature>.service.ts\`, \`<feature>.test.ts\`.
 - One class per file.
 
 ## Rules
 
-- Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`. Add every controller to \`controllers\` in \`src/app.ts\`.
+- Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`. Add every controller to \`controllers\` in \`options\` in \`src/app.ts\`.
 - Inputs are typed by schemas next to the controller: \`{ params, query, body }\` built with \`t\`. The handler takes \`ctx: Ctx<typeof Route>\`. Never parse or validate \`ctx.params\`, \`ctx.query\` or \`ctx.body\` by hand.
 - \`ctx.body\` holds only the fields its schema lists (unknown ones are dropped), so a client cannot sneak in an \`id\` or a \`role\`.
 - Declare a \`response\` schema on routes that return records: only its fields are sent, so internal fields (password hashes, foreign keys) never leak. Return entities as they are; do not copy fields by hand.
 - Services are plain classes. Get them with \`private readonly x = inject(XService)\` in a field. Never constructor parameters, never \`new\` on a service, never \`inject()\` inside a method. Startup work goes in \`onInit()\`.
-- Config values are tokens: \`export const API_KEY = token<string>("API_KEY")\`, provided in \`providers\` in \`src/app.ts\`, read with \`inject(API_KEY)\`.
+- Configuration comes from environment variables declared in \`src/config.ts\` (\`config({ NAME: t.string(), ... })\`, with a \`default\` or \`t.optional()\` for optional ones, never both), read with \`inject(AppConfig)\`. Never read \`process.env\` elsewhere. Add new variables to \`.env.example\`. Tests change values with \`overrides: [AppConfig.override({ NAME: value })]\`.
+- Logging: \`private readonly log = inject(Logger).child("feature")\` in services, \`ctx.log\` in handlers (adds the request id). \`log.info("What happened", { ids })\`, \`log.error("What failed", error)\`. Never \`console.log\`.
+- A service that talks to a database or another server implements \`HealthCheck\` (\`checkHealth()\` throws when it cannot serve): \`/ready\` calls it. Pass \`ctx.signal\` to \`fetch()\` and database calls so they stop with the request.
 - Auth is a guard class (add-guard skill). It stores the user in \`ctx.state\`; handlers type it: \`ctx: Ctx<typeof Route, { user: User }>\`.
 - Errors: \`throw HttpError.notFound("...", { code: "THING_NOT_FOUND" })\` (also \`badRequest\`, \`unauthorized\`, \`forbidden\`, \`conflict\`). Clients get problem+json with your \`code\`.
 - Return plain objects from handlers (sent as JSON). Set \`ctx.status\` or \`ctx.setHeader()\` when needed.
-- Tests use \`createTestApp({ controllers, providers })\` and \`inject()\`: no port, no server. Replace a service with \`overrides\`.
+- Tests use \`createTestApp({ ...options, overrides })\` and \`inject()\`: no port, no server, the same app as production. Replace a service with \`overrides\`.
 
 ## Sparkus errors
 
@@ -230,12 +300,14 @@ description: Add an HTTP endpoint to this Sparkus app (route, typed inputs, test
    };
    \`\`\`
 
-   \`params\` must name exactly the path's \`:parameters\`. \`query\` fields are optional with \`t.optional()\`:
+   \`params\` must name exactly the path's \`:parameters\`. \`query\` fields take a \`default\` (always present then) or \`t.optional()\`:
 
    \`\`\`ts
-   const ListUsers = { query: t.object({ page: t.optional(t.integer({ min: 1 })) }) };
-   // in the handler: const page = ctx.query.page ?? 1;
+   const ListUsers = { query: t.object({ page: t.integer({ min: 1, default: 1 }), sort: t.enum(["asc", "desc"], { default: "asc" }) }) };
+   // in the handler: ctx.query.page is a number, ctx.query.sort is "asc" | "desc"
    \`\`\`
+
+   Route options are \`params\`, \`query\`, \`body\`, \`response\`, \`status\`, \`timeout\` (ms) and \`bodyLimit\` (bytes); any other key is SPK1017.
 3. Add the method:
 
    \`\`\`ts
@@ -261,8 +333,9 @@ description: Add a service (business logic, data access) to this Sparkus app and
 2. Dependencies come from fields: \`private readonly db = inject(Database);\`.
 3. Startup work (connections, cache warm-up) goes in \`onInit()\`, cleanup in \`onShutdown()\`. Both may be async.
 4. Use it from a controller with \`private readonly things = inject(ThingService);\`. Services are singletons: never \`new\` them, never list them in \`controllers\`.
-5. For config values or interfaces, use a token: \`export const API_KEY = token<string>("API_KEY");\`, added to \`providers\` in \`src/app.ts\`: \`{ provide: API_KEY, useValue: process.env.API_KEY ?? "dev-key" }\`. Read it with \`inject(API_KEY)\`.
-6. Run \`bunx sparkus check --json\`. A dependency cycle is \`SPK1002\`.
+5. Configuration: add the variable to \`config({ ... })\` in \`src/config.ts\` (\`API_KEY: t.string({ min: 1 })\`) and to \`.env.example\`, then \`private readonly config = inject(AppConfig)\`. For an interface implemented by several classes, use a token: \`export const MAILER = token<Mailer>("MAILER")\`, provided in \`providers\` in \`src/app.ts\`.
+6. Log with \`private readonly log = inject(Logger).child("<feature>")\`. A service wrapping a database or remote server implements \`HealthCheck\`: \`checkHealth()\` throws when it cannot serve, and \`/ready\` reports it.
+7. Run \`bunx sparkus check --json\`. A dependency cycle is \`SPK1002\`.
 `;
 
 const SKILL_TEST = `---
@@ -273,13 +346,13 @@ description: Write or fix tests for this Sparkus app with createTestApp and inje
 \`\`\`ts
 import { createTestApp } from "@sparkus/testing";
 import { expect, test } from "bun:test";
-import { controllers, providers } from "../app.ts";
+import { options } from "../app.ts";
+import { AppConfig } from "../config.ts";
 
 test("GET /things/:id", async () => {
     const app = await createTestApp({
-        controllers,
-        providers,
-        overrides: [{ provide: ThingRepository, useValue: fakeRepository }],
+        ...options,
+        overrides: [{ provide: ThingRepository, useValue: fakeRepository }, AppConfig.override({ PAGE_SIZE: 5 })],
     });
     const res = await app.inject({ method: "GET", url: "/things/1" });
     expect(res.status).toBe(200);
@@ -289,7 +362,7 @@ test("GET /things/:id", async () => {
 
 - \`inject()\` runs the full pipeline (routing, guards, validation, errors) in memory. No port.
 - Bodies: \`body: { ... }\` is sent as JSON. Headers: \`headers: { authorization: "Bearer ..." }\`.
-- Always pass \`providers\` from \`src/app.ts\`: without them, tokens fail with SPK1013.
+- Always start from \`options\` of \`src/app.ts\`: without its providers, tokens fail with SPK1013. Change configuration values with \`AppConfig.override({ ... })\` (typed, checked, defaults kept).
 - Errors are problem+json: assert \`res.status\` and \`res.json().code\`.
 - Replace slow or external dependencies with \`overrides\`, never real network calls.
 - Run \`bun test\`.
@@ -313,11 +386,15 @@ Run \`bunx sparkus check --json\`. The message names the class, route or value a
 | SPK1013 | A \`token()\` has no provider: add it to \`providers\` in \`src/app.ts\`; tests pass \`providers\` to \`createTestApp\`. |
 | SPK1016 | An \`onInit()\` threw: see \`cause\`. |
 | SPK1014 | Invalid path: static segments and \`:name\` only. |
-| SPK1017 | \`params\` must list exactly the path's parameters; schemas are flat scalars. |
+| SPK1017 | \`params\` must list exactly the path's parameters; schemas are flat scalars; a \`default\` must pass its own schema. |
+| SPK1018 | A variable of \`src/config.ts\` (or PORT, or LOG_LEVEL) is missing or invalid (all are listed): set it in \`.env\`, or give it a \`default\`. |
+| SPK1019 | An app option is invalid (CORS origin with a trailing slash, \`origin: "*"\` with credentials): follow the message. |
 | SPK2001 / SPK2002 | No route for this path / method. Check \`bunx sparkus routes\`. |
 | SPK2003 / SPK2005 | Send a JSON body with \`content-type: application/json\`. |
 | SPK2004 | Input does not match the schema: \`issues[0].path\` names the value. |
 | SPK2007 | A guard returned something other than \`true\`. Throw \`HttpError.unauthorized(..., { code })\` for a 401. |
+| SPK2008 | The request took longer than \`requestTimeout\`: speed it up, or give the route its own \`timeout\`. |
+| SPK2009 | \`/ready\` failed: a \`HealthCheck\` service threw, returned \`false\` or timed out (\`checks\` names it), or the app is shutting down. |
 | SPK5000 | Your code threw a non-HttpError: fix it, or map it with \`onError\`. |
 `;
 

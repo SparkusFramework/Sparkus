@@ -7,6 +7,8 @@ export interface Target {
     entry: string;
     /** "ceiling" = raw server of the runtime, used as the 100 % reference. */
     role: "ceiling" | "sparkus" | "competitor";
+    /** Extra environment variables of the server process. */
+    env?: Record<string, string>;
 }
 
 export const targets: Target[] = [
@@ -30,4 +32,40 @@ export const targets: Target[] = [
 export const extraTargets: Target[] = [
     { name: "sparkus-pipeline-bun", runtime: "bun", entry: "targets/sparkus-pipeline/server.ts", role: "sparkus" },
     { name: "sparkus-pipeline-node", runtime: "node", entry: "targets/sparkus-pipeline/dist/server.js", role: "sparkus" },
+    // Production options on (request logs to stdout, security headers, request ids, CORS, health):
+    // what they cost, measured against sparkus-bun / sparkus-node in the same session.
+    { name: "sparkus-prod-bun", runtime: "bun", entry: "targets/sparkus/server.ts", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
+    { name: "sparkus-prod-node", runtime: "node", entry: "targets/sparkus/dist/server.js", role: "sparkus", env: { SPARKUS_BENCH_PROFILE: "production" } },
+    // One production option at a time, to see what each costs.
+    ...(["bun", "node"] as const).flatMap((runtime) =>
+        ["logs", "security", "requestid", "cors"].map(
+            (option): Target => ({
+                name: `sparkus-${option}-${runtime}`,
+                runtime,
+                entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+                role: "sparkus",
+                env: { SPARKUS_BENCH_OPTIONS: option },
+            }),
+        ),
+    ),
+    // Request context in log lines (AsyncLocalStorage around each request): alone, against
+    // sparkus-bun / sparkus-node, and on top of the production profile, against sparkus-prod-*.
+    ...(["bun", "node"] as const).flatMap((runtime): Target[] => [
+        {
+            name: `sparkus-context-${runtime}`,
+            runtime,
+            entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+            role: "sparkus",
+            env: { SPARKUS_BENCH_OPTIONS: "context" },
+        },
+        {
+            name: `sparkus-prodctx-${runtime}`,
+            runtime,
+            entry: runtime === "bun" ? "targets/sparkus/server.ts" : "targets/sparkus/dist/server.js",
+            role: "sparkus",
+            env: { SPARKUS_BENCH_PROFILE: "production", SPARKUS_BENCH_OPTIONS: "context" },
+        },
+    ]),
+    // Fastify with its logger (pino, one line at the start and one at the end of each request).
+    { name: "fastify-logger", runtime: "node", entry: "targets/fastify/server.js", role: "competitor", env: { FASTIFY_LOGGER: "1" } },
 ];

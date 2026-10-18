@@ -165,3 +165,61 @@ describe("t.nullable", () => {
         expect(compileProjector(t.nullable(t.object({ id: t.integer() })), WHERE)!(null)).toBeNull();
     });
 });
+
+describe("t.enum() and defaults", () => {
+    const Post = t.object({
+        title: t.string(),
+        status: t.enum(["draft", "published"], { default: "draft" }),
+        views: t.integer({ min: 0, default: 0 }),
+        pinned: t.boolean({ default: false }),
+        label: t.optional(t.nullable(t.enum(["hot"]))),
+    });
+    const parse = compileParser(Post, invalid, WHERE);
+
+    test("defaults fill absent fields, in declaration order", () => {
+        const body = parse({ title: "Hi" });
+        expect(body).toEqual({ title: "Hi", status: "draft", views: 0, pinned: false });
+        expect(Object.keys(body as object)).toEqual(["title", "status", "views", "pinned"]);
+        expect(parse({ title: "Hi", status: "published", views: 3, pinned: true, label: null })).toEqual({
+            title: "Hi",
+            status: "published",
+            views: 3,
+            pinned: true,
+            label: null,
+        });
+    });
+
+    test("a given value is checked as usual", () => {
+        expect(() => parse({ title: "Hi", status: "deleted" })).toThrow('$.status must be one of "draft", "published"');
+        expect(() => parse({ title: "Hi", views: -1 })).toThrow("$.views must be >= 0");
+        expect(() => parse({ title: "Hi", label: "cold" })).toThrow('$.label must be "hot" or null');
+        expect(() => parse({ title: "Hi", status: 1 })).toThrow('$.status must be one of "draft", "published"');
+    });
+
+    test("the validator accepts an absent field with a default", () => {
+        const validate = compileValidator(Post);
+        expect(validate({ title: "Hi" })).toBeNull();
+        expect(validate({ title: "Hi", status: "x" })).toEqual({ path: "$.status", message: 'must be one of "draft", "published"' });
+    });
+
+    test("a default that fails its own schema, or an empty enum, is refused at startup", () => {
+        expect(() => compileParser(t.object({ n: t.integer({ max: 5, default: 9 }) }), invalid, WHERE)).toThrow(
+            "[SPK1017] POST /x (X.y): default 9 of $.n must be <= 5. Change the default or the schema.",
+        );
+        expect(() => compileParser(t.object({ e: t.enum([] as unknown as ["a"]) }), invalid, WHERE)).toThrow(
+            "[SPK1017] POST /x (X.y): $.e is t.enum([]) without values. List at least one.",
+        );
+    });
+
+    test("types: a field with a default is required in the output, an enum is a union", () => {
+        const body = parse({ title: "x" }) as import("../src/schema.js").Infer<typeof Post>;
+        const status: "draft" | "published" = body.status;
+        const views: number = body.views;
+        expect([status, views]).toEqual(["draft", 0]);
+    });
+
+    test("the projector copies enums as they are", () => {
+        const project = compileProjector(t.object({ status: t.enum(["a", "b"]) }), WHERE)!;
+        expect(project({ status: "a", secret: 1 })).toEqual({ status: "a" });
+    });
+});

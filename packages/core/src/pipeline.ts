@@ -1,6 +1,6 @@
 import type { Ctx, RequestContext } from "./context.js";
 import type { Class, Container } from "./di.js";
-import { ErrorCode, HttpError, SparkusError, guardRejected } from "./errors.js";
+import { ErrorCode, HttpError, SparkusError, guardRejected, requestTimedOut } from "./errors.js";
 import type { Issue } from "./schema.js";
 
 /** A guard lets a request through by returning `true`. Anything else answers 403. */
@@ -106,6 +106,8 @@ export interface PipelineParts {
      * asynchronously). `t` schemas never do, and keep stages without the extra check.
      */
     asyncInput: boolean;
+    /** Milliseconds before an unsettled request answers 503 and aborts `ctx.signal`. 0: no limit. */
+    timeout: number;
 }
 
 /** One schema stage: takes the raw value, returns the checked one (or a promise of it), throws on invalid input. */
@@ -190,7 +192,35 @@ export function composePipeline(parts: PipelineParts): Run {
         }
     }
 
+    // Outermost: the limit covers everything the request waits for, the body included.
+    if (parts.timeout > 0) run = withTimeout(run, parts.timeout);
+
     return run;
+}
+
+/** A synchronous result is never late; a promise races a timer that aborts the request. */
+function withTimeout(next: Run, ms: number): Run {
+    return (ctx) => {
+        const out = next(ctx);
+        if (!(out instanceof Promise)) return out;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                const error = requestTimedOut(ms);
+                ctx.abort(error);
+                reject(error);
+            }, ms);
+            out.then(
+                (value) => {
+                    clearTimeout(timer);
+                    resolve(value);
+                },
+                (error) => {
+                    clearTimeout(timer);
+                    reject(error);
+                },
+            );
+        });
+    };
 }
 
 /** Params then query, waiting for a step only when it returns a promise. */

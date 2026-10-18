@@ -1,7 +1,7 @@
 import type { CompiledRoute } from "./compile.js";
 
 /** Edit distance where swapping two adjacent characters counts as one edit. */
-function distance(a: string, b: string): number {
+export function distance(a: string, b: string): number {
     const d = Array.from({ length: a.length + 1 }, (_, i) =>
         Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
     );
@@ -14,6 +14,17 @@ function distance(a: string, b: string): number {
         }
     }
     return d[a.length]![b.length]!;
+}
+
+/** The closest name, when it is close enough to be a typo. */
+export function closest(name: string, names: readonly string[]): string | undefined {
+    let best: string | undefined;
+    let bestScore = Infinity;
+    for (const candidate of names) {
+        const score = distance(name.toLowerCase(), candidate.toLowerCase());
+        if (score < bestScore) [best, bestScore] = [candidate, score];
+    }
+    return bestScore <= Math.max(2, name.length / 3) ? best : undefined;
 }
 
 function segments(path: string): string[] {

@@ -42,11 +42,11 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 - `@Controller(prefix)` on a class; it must be listed in `createApp({ controllers })`.
 - `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Head`, `@Options` on public instance methods: `(path, options?)`.
 - Paths: static segments and `:name` parameters. Case-sensitive; a trailing slash is a different path; static segments win over parameters. HEAD falls back to GET. Unknown path: 404 (SPK2001). Known path, other method: 405 with `Allow` (SPK2002).
-- Options: `{ params?, query?, body?, response?, status? }`. `response` types what the handler returns (checked at compile time), keeps only its fields in the response, and documents it in OpenAPI. Declare them as a `const` and type the handler with `Ctx<typeof Options>`. A handler that does not match (wrong return type, wrong `Ctx`) is reported by TypeScript on the decorator (TS1241); the last lines of the error name the mismatch.
+- Options: `{ params?, query?, body?, response?, status?, bodyLimit?, timeout? }`. `response` types what the handler returns (checked at compile time), keeps only its fields in the response, and documents it in OpenAPI. Declare them as a `const` and type the handler with `Ctx<typeof Options>`. A handler that does not match (wrong return type, wrong `Ctx`) is reported by TypeScript on the decorator (TS1241); the last lines of the error name the mismatch.
 
 ## Schemas (`t`)
 
-`t.string({ min, max })`, `t.integer({ min, max })`, `t.number({ min, max })`, `t.boolean()`, `t.object({ ... })`, `t.array(item, { min, max })`, `t.optional(schema)` (may be absent: `T | undefined`), `t.nullable(schema)` (may be `null`: `T | null`; both combine). Not allowed in `params`/`query` (SPK1017).
+`t.string({ min, max })`, `t.integer({ min, max })`, `t.number({ min, max })`, `t.boolean()`, `t.enum(["draft", "published"])` (a union of strings), `t.object({ ... })`, `t.array(item, { min, max })`, `t.optional(schema)` (may be absent: `T | undefined`), `t.nullable(schema)` (may be `null`: `T | null`; both combine). Not allowed in `params`/`query` (SPK1017). Scalars and enums take a `default`: `t.integer({ min: 1, default: 1 })`, `t.enum(["asc", "desc"], { default: "asc" })`: an absent body field or query parameter gets it, so the field is always present (its type is not optional). Not on path parameters (SPK1017); a default that fails its own schema is SPK1017.
 
 - `body`: any schema. JSON only (`content-type: application/json`, else 415 SPK2005), 1 MiB by default (413 SPK2006). Invalid: 400 SPK2004 with `issues: [{ path: "$.age", message }]`. Fields the schema does not list are dropped, at every depth: `ctx.body` holds exactly its type, and an absent optional field is absent (not `undefined`), so `{ ...entity, ...ctx.body }` is safe.
 - `response`: fields the schema does not list are dropped before interceptors run and before sending (a `passwordHash` on an entity never leaks). Return your entities as they are. A value whose shape does not match (an object or array where the schema says otherwise) answers 500 SPK5001 naming the route and the path.
@@ -57,7 +57,7 @@ export default createApp({ controllers: [UserController] });   // src/app.ts
 
 ## Ctx (handlers, guards, interceptors)
 
-`method`, `path`, `params`, `query`, `body`, `header(name)`, `status` (settable), `setHeader(name, value)`, `state` (per-request object shared with guards and interceptors). Type `state` with the second parameter: `ctx: Ctx<typeof CreatePost, { user: User }>` (not checked at runtime: the guard that sets it must run on that route).
+`method`, `path`, `params`, `query`, `body`, `header(name)`, `status` (settable), `setHeader(name, value)`, `state` (per-request object shared with guards and interceptors), `requestId` (the client's `x-request-id` when safe, else a UUID), `log` (logger whose lines carry the request id), `signal` (aborted when the client disconnects or the request times out: pass it to `fetch` and database calls). Type `state` with the second parameter: `ctx: Ctx<typeof CreatePost, { user: User }>` (not checked at runtime: the guard that sets it must run on that route).
 
 Return value: object/array/number/null → JSON; string → text/plain; `Uint8Array` → octet-stream; `undefined` → 204 (or the route status if not 200); a `Response` is sent as is. Handlers may be async.
 
@@ -67,6 +67,47 @@ Return value: object/array/number/null → JSON; string → text/plain; `Uint8Ar
 - Values: `export const DB_URL = token<string>("DB_URL")`, then `createApp({ providers: [{ provide: DB_URL, useValue: "..." }] })`. Providers: `useValue`, `useClass`, `useFactory` (may call `inject`).
 - Lifecycle: `onInit()` (dependencies first, may be async, awaited before listening) and `onShutdown()` (reverse order).
 - `app.get(Token)` resolves a singleton.
+
+## Configuration
+
+```ts
+// src/config.ts
+export const AppConfig = config({
+    DATABASE_URL: t.string({ min: 1 }),
+    PORT: t.integer({ min: 1, default: 3000 }),
+    MODE: t.enum(["live", "sandbox"], { default: "sandbox" }),
+    ALLOWED_ORIGINS: t.optional(t.array(t.string())),   // comma-separated
+});
+// in a service: private readonly config = inject(AppConfig);   this.config.PORT is a number
+```
+
+Keys are environment variable names. Fields: `t.string`, `t.integer`, `t.number`, `t.boolean` ("true"/"false"/"1"/"0"), `t.enum`, `t.array` of those; `t.optional` or `default` for optional variables; an empty variable is unset. Read from `process.env` at startup (Bun loads `.env` itself; under Node use `node --env-file=.env`). Missing or invalid variables stop the app with SPK1018, listing all of them (values are never printed); a `default` inside `t.optional()` is refused. In tests: `overrides: [AppConfig.override({ PAGE_SIZE: 5 })]` (typed, checked, defaults and environment kept for the rest). `listen()` reads `PORT` itself (default 3000, invalid: SPK1018); declare it in `config()` too and pass `listen({ port })` to keep one source.
+
+## Logging
+
+`private readonly log = inject(Logger).child("users")`, then `this.log.info("User created", { userId })`, `this.log.error("Payment failed", error)` (the second argument is an object of fields, or anything else, such as a `catch` variable, logged as `err`). In handlers prefer `ctx.log` (adds `reqId`). With `logger: { requestContext: true }`, every logger adds the `reqId` (and the server span's `trace_id`, `span_id`) of the request being handled, services included, across awaits (AsyncLocalStorage: about 4 % of throughput under Node, under 1 % under Bun). Levels: trace, debug, info, warn, error, fatal. One JSON object per line (`{"level":"info","time":1760000000000,"module":"users","msg":"...","userId":1}`), readable lines in a terminal.
+
+`createApp({ logger: { level, modules: { db: "debug" }, format: "json" | "pretty", requests: true, requestContext: true, write } })`; `logger: false` for none. `LOG_LEVEL=info,db=debug` sets the levels, only when the code gives no `level` (then `modules` merge over it). Request lines use the module "http" (`modules: { http: "warn" }` silences them), Sparkus' own lines "sparkus". Default level: info (warn under NODE_ENV=test). `requests: true` logs one line per request (`msg: "GET /users/1 200"`, `method`, `path`, `route`, `status`, `ms`, `reqId`).
+
+## Production options
+
+```ts
+createApp({
+    controllers,
+    logger: { requests: true, requestContext: true },   // request lines; reqId in every line logged during a request
+    cors: { origin: ["https://app.example.com"], credentials: true },   // or cors: true for any origin
+    securityHeaders: true,            // CSP, HSTS, nosniff, frame-options...; { "strict-transport-security": false } drops one
+    requestId: true,                  // echo x-request-id in every response
+    health: true,                     // GET /health (liveness), GET /ready (runs every HealthCheck service)
+    requestTimeout: 30_000,           // 503 SPK2008 and ctx.signal aborted after 30 s (async work only); route option `timeout` overrides
+    telemetry: { tracer: trace.getTracer("api"), meter: metrics.getMeter("api") },   // @opentelemetry/api
+});
+await app.listen({ shutdownDelay: 5_000, idleTimeout: 65_000 });
+```
+
+- Everything is off by default and costs nothing when off. CORS, security and request id headers are on every response, errors and 404 included; a header the handler sets wins. A CORS preflight (OPTIONS with `access-control-request-method`) on a path with routes answers 204 with that path's methods. Origins are exact (`https://app.example.com`, no trailing slash: SPK1019), RegExps, or a function `(origin) => boolean` (a throw refuses the origin); `origin: "*"` refuses `credentials`. A handler that sets `vary` replaces the `vary: origin` CORS adds: include `origin` in it.
+- Readiness: a service with `checkHealth()` (implements `HealthCheck`) is called by `/ready`; throwing or returning `false` gives 503 SPK2009 naming it. From the shutdown signal on (and in `app.close()`), `/ready` answers 503; on a signal, `shutdownDelay` keeps serving that long first, so load balancers stop sending traffic. Checks are the services the container built (injected somewhere), found on the first probe; `useValue` providers are not checked. Probes skip guards and are left out of OpenAPI.
+- Telemetry: a server span per request named `GET /users/:id` with the HTTP semantic convention attributes, errors recorded on 5xx, and the `http.server.request.duration` histogram (seconds). `extract: (ctx) => ...` gives the parent context (traceparent), `activate: (span, run) => context.with(trace.setSpan(context.active(), span), run)` makes your spans its children.
 
 ## Guards and interceptors
 
@@ -87,9 +128,9 @@ const timing: InterceptorFn = async (ctx, next) => { const r = await next(); ctx
 
 ## App
 
-`createApp({ controllers, providers?, guards?, interceptors?, onError?, exposeErrors?, bodyLimit?, logger?, engine? })`
+`createApp({ controllers, providers?, guards?, interceptors?, onError?, exposeErrors?, bodyLimit?, requestTimeout?, logger?, cors?, securityHeaders?, requestId?, health?, telemetry?, engine? })`
 
-- `await app.listen({ port?, hostname?, signals?, shutdownTimeout? })` → `{ engine, port, url }`. SIGINT/SIGTERM: stop accepting, finish in-flight requests, `onShutdown`, exit.
+- `await app.listen({ port?, hostname?, signals?, shutdownTimeout?, shutdownDelay?, idleTimeout? })` → `{ engine, port, url }`. SIGINT/SIGTERM: readiness fails, wait `shutdownDelay`, stop accepting, finish in-flight requests (up to `shutdownTimeout`), `onShutdown`, exit.
 - `await app.init()` wires everything without listening. `app.routes` lists the routes. `app.fetch(request)` is a web-standard handler.
 - `app.openapi({ title, version })` returns the OpenAPI 3.1 document built from the route schemas (after `init()`).
 - `await app.close()` shuts down.
@@ -104,7 +145,7 @@ const res = await app.inject({ method: "POST", url: "/users", body: { name: "Ada
 res.status; res.json(); res.headers; res.text;
 ```
 
-In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: pass the app's `providers` (tokens) too. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
+In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
 
 ## CLI
 

@@ -13,9 +13,13 @@ type JsonSchema = Record<string, unknown>;
 
 /** Converts a `t` schema to JSON Schema (draft 2020-12, as used by OpenAPI 3.1). */
 export function toJsonSchema(schema: Schema): JsonSchema {
-    const json = typeJsonSchema(schema);
-    // 2020-12 spells nullable as a type list: { "type": ["string", "null"] }.
-    return schema.nullable === true ? { ...json, type: [json.type, "null"] } : json;
+    let json = typeJsonSchema(schema);
+    // 2020-12 spells nullable as a type list: { "type": ["string", "null"] }; an enum lists null too.
+    if (schema.nullable === true) {
+        json = { ...json, type: [json.type, "null"] };
+        if (Array.isArray(json.enum)) json.enum = [...json.enum, null];
+    }
+    return schema.default === undefined ? json : { ...json, default: schema.default };
 }
 
 function typeJsonSchema(schema: Schema): JsonSchema {
@@ -28,6 +32,8 @@ function typeJsonSchema(schema: Schema): JsonSchema {
             return { type: schema.kind, ...(min !== undefined && { minimum: min }), ...(max !== undefined && { maximum: max }) };
         case "boolean":
             return { type: "boolean" };
+        case "enum":
+            return { type: "string", enum: [...schema.values!] };
         case "array":
             return {
                 type: "array",
@@ -37,7 +43,8 @@ function typeJsonSchema(schema: Schema): JsonSchema {
             };
         case "object": {
             const entries = Object.entries(schema.shape!);
-            const required = entries.filter(([, field]) => !field.optional).map(([key]) => key);
+            // A field with a default may be left out by the client.
+            const required = entries.filter(([, field]) => !field.optional && field.default === undefined).map(([key]) => key);
             return {
                 type: "object",
                 properties: Object.fromEntries(entries.map(([key, field]) => [key, toJsonSchema(field)])),

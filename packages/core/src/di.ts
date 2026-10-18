@@ -97,6 +97,11 @@ export class Container {
         this.providers.set(token, provider);
     }
 
+    /** True when a provider is registered for the token. */
+    provided(token: Token): boolean {
+        return this.providers.has(token);
+    }
+
     has(token: Token): boolean {
         return this.instances.has(token);
     }
@@ -182,6 +187,11 @@ export class Container {
             );
         }
         return new type();
+    }
+
+    /** Instances the container built, dependencies first. */
+    built(): readonly object[] {
+        return this.created;
     }
 
     /** Runs every `onInit()` hook, dependencies first. */

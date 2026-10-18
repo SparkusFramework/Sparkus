@@ -186,6 +186,9 @@ export async function main(argv: readonly string[]): Promise<number> {
         if (flags.version === true) return COMMANDS.version!.run({ json, positionals, flags });
         const name = positionals[0] ?? "help";
         if (flags.help === true || name === "help") return COMMANDS.help!.run({ json, positionals, flags });
+        // Logs of the inspected app (an onInit() that says "connected") go to stderr: stdout
+        // carries the command's own output (JSON, OpenAPI, a client), which must stay parseable.
+        if (name !== "dev") process.env.SPARKUS_LOG_STDERR = "1";
         const command = COMMANDS[name];
         if (command === undefined) {
             const hint = suggest(name, Object.keys(COMMANDS));

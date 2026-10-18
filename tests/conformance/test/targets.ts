@@ -3,6 +3,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createApp } from "sparkus";
 import { fixtureOptions } from "../src/fixture.js";
+import { productionOptions } from "../src/production.js";
+
+/** "default": the behavior fixture. "production": every production option on. */
+export type Fixture = "default" | "production";
+
+function optionsOf(fixture: Fixture) {
+    return fixture === "production" ? productionOptions() : fixtureOptions();
+}
 
 export interface Reply {
     status: number;
@@ -15,10 +23,13 @@ export interface RequestInit {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+    redirect?: "manual";
 }
 
 export interface Target {
     name: string;
+    /** True when the app runs in this process: its logs and spans can be inspected. */
+    local: boolean;
     request(path: string, init?: RequestInit): Promise<Reply>;
     close(): Promise<void>;
 }
@@ -28,10 +39,11 @@ async function reply(response: Response): Promise<Reply> {
     return { status: response.status, headers: response.headers, text, json: () => JSON.parse(text) };
 }
 
-export async function inMemory(): Promise<Target> {
-    const app = await createTestApp(fixtureOptions());
+export async function inMemory(fixture: Fixture = "default"): Promise<Target> {
+    const app = await createTestApp(optionsOf(fixture));
     return {
         name: "in-memory",
+        local: true,
         request: async (path, init = {}) => {
             const res = await app.inject({ url: path, method: init.method, headers: init.headers, body: init.body });
             return { status: res.status, headers: res.headers, text: res.text, json: res.json };
@@ -40,18 +52,19 @@ export async function inMemory(): Promise<Target> {
     };
 }
 
-export function overHttp(name: string, base: string, close: () => Promise<void>): Target {
+export function overHttp(name: string, base: string, close: () => Promise<void>, local: boolean): Target {
     return {
         name,
+        local,
         request: async (path, init = {}) => reply(await fetch(base + path, init)),
         close,
     };
 }
 
-export async function inProcess(engine: "bun" | "node"): Promise<Target> {
-    const app = createApp({ ...fixtureOptions(), engine });
+export async function inProcess(engine: "bun" | "node", fixture: Fixture = "default"): Promise<Target> {
+    const app = createApp({ ...optionsOf(fixture), engine });
     const { port } = await app.listen({ port: 0, hostname: "127.0.0.1", signals: false });
-    return overHttp(`${engine} engine (in Bun)`, `http://127.0.0.1:${port}`, () => app.close());
+    return overHttp(`${engine} engine (in Bun)`, `http://127.0.0.1:${port}`, () => app.close(), true);
 }
 
 export const nodeBin = process.env.NODE_BIN ?? "node";
@@ -97,11 +110,16 @@ export async function spawnServer(runtime: string, env: Record<string, string> =
     return { proc, info, nextLine, base: `http://127.0.0.1:${info.port}` };
 }
 
-export async function realNode(): Promise<Target> {
-    const { proc, base } = await spawnServer(nodeBin);
+export async function realNode(fixture: Fixture = "default"): Promise<Target> {
+    const { proc, base } = await spawnServer(nodeBin, { FIXTURE: fixture });
     const version = (await Bun.$`${nodeBin} --version`.text()).trim();
-    return overHttp(`node engine (Node ${version})`, base, async () => {
-        proc.kill();
-        await proc.exited;
-    });
+    return overHttp(
+        `node engine (Node ${version})`,
+        base,
+        async () => {
+            proc.kill();
+            await proc.exited;
+        },
+        false,
+    );
 }

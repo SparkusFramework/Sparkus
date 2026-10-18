@@ -21,6 +21,8 @@ export const ErrorCode = {
     AlreadyListening: "SPK1015",
     LifecycleFailed: "SPK1016",
     InvalidRouteSchema: "SPK1017",
+    InvalidConfig: "SPK1018",
+    InvalidOption: "SPK1019",
 
     RouteNotFound: "SPK2001",
     MethodNotAllowed: "SPK2002",
@@ -29,6 +31,8 @@ export const ErrorCode = {
     UnsupportedMediaType: "SPK2005",
     PayloadTooLarge: "SPK2006",
     Forbidden: "SPK2007",
+    RequestTimeout: "SPK2008",
+    NotReady: "SPK2009",
 
     Internal: "SPK5000",
     ResponseMismatch: "SPK5001",
@@ -260,6 +264,10 @@ export function payloadTooLarge(limit: number): HttpError {
         code: ErrorCode.PayloadTooLarge,
         headers: { connection: "close" },
     });
+}
+
+export function requestTimedOut(ms: number): HttpError {
+    return new HttpError(503, `The request took longer than ${ms} ms and was abandoned.`, { code: ErrorCode.RequestTimeout });
 }
 
 export function guardRejected(): HttpError {
