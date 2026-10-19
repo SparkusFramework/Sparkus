@@ -1,4 +1,5 @@
-import { createApp, type AppOptions, type Provider, type SparkusApp, type Token } from "@sparkus/core";
+import { SparkusApp, type AppOptions, type Provider, type Token } from "@sparkus/core";
+import { callerFile } from "@sparkus/core/engine";
 
 export interface TestAppOptions extends Omit<AppOptions, "engine"> {
     /** Providers that replace real dependencies (fakes, stubs). Applied after `providers`. */
@@ -76,17 +77,20 @@ export class TestApp {
 }
 
 /**
- * Builds and initializes an app for tests, with dependencies replaced:
+ * Builds and initializes an app for tests, with dependencies replaced. Controllers are found
+ * like createApp() does, from the test file (`src/users/users.test.ts` scans `src/`):
  *
  *     const t = await createTestApp({
- *         controllers: [UserController],
+ *         ...options,
  *         overrides: [{ provide: UserRepository, useValue: fakeRepository }],
  *     });
  *     const res = await t.inject({ url: "/users/42" });
  */
-export async function createTestApp(options: TestAppOptions): Promise<TestApp> {
+export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
     const { overrides = [], ...appOptions } = options;
-    const app = createApp({ exposeErrors: true, ...appOptions });
+    // Before any await: the caller's frame is only on the stack in the synchronous part.
+    const origin = typeof appOptions.controllers === "object" ? undefined : callerFile(createTestApp);
+    const app = new SparkusApp({ exposeErrors: true, ...appOptions }, origin);
     for (const provider of overrides) app.provide(provider);
     await app.init();
     return new TestApp(app);

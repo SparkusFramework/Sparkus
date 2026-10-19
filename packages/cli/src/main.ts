@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { CliError, describeError, loadApp, unlistedControllers } from "./app-loader.js";
 import { ArgsError, parseArgs, suggest, type FlagSpecs } from "./args.js";
+import { buildApp } from "./build.js";
 import { generateClient } from "./client.js";
 import { dev } from "./dev.js";
 import { initProject } from "./init.js";
@@ -14,7 +15,8 @@ const GLOBAL_FLAGS: FlagSpecs = {
     version: { type: "boolean", short: "v", description: "Print the version." },
     json: { type: "boolean", description: "Machine-readable output (JSON on stdout)." },
     watch: { type: "string", description: "Folder watched by dev (default: src)." },
-    out: { type: "string", description: "File written by client (default: stdout)." },
+    out: { type: "string", description: "File written by client (default: stdout); folder written by build (default: dist)." },
+    target: { type: "string", description: "Runtime the build is for: bun (default) or node." },
 };
 
 interface Command {
@@ -129,6 +131,27 @@ const COMMANDS: Record<string, Command> = {
             mkdirSync(dirname(file), { recursive: true });
             writeFileSync(file, code);
             print(json, { ok: true, entry, file: out, routes }, `✓ ${out}: client for ${routes} routes.`);
+            return 0;
+        },
+    },
+    build: {
+        usage: "build [main] [--out dir]",
+        summary: "Bundle the app for production. Controllers are found now, not at startup. Entry: src/main.ts.",
+        run: async ({ json, positionals, flags }) => {
+            const result = await buildApp(
+                positionals[0],
+                {
+                    out: typeof flags.out === "string" ? flags.out : undefined,
+                    target: typeof flags.target === "string" ? flags.target : undefined,
+                },
+                process.cwd(),
+            );
+            const main = result.files.find((file) => file.endsWith(".js")) ?? result.out;
+            print(
+                json,
+                { ok: true, ...result },
+                `✓ ${main}: bundled for ${result.target}, ${result.controllers} controller files imported. Run: ${result.target} ${main}`,
+            );
             return 0;
         },
     },

@@ -62,8 +62,8 @@ function controllerFiles(dir: string): string[] {
 
 /**
  * Controllers exported from `*.controller.ts` files next to the entry (and below it)
- * that serve no route: almost always a controller missing from `createApp({ controllers })`,
- * which would otherwise only show up as a 404.
+ * that serve no route: with an explicit `createApp({ controllers: [...] })`, almost always
+ * one missing from the list, which would otherwise only show up as a 404.
  */
 export async function unlistedControllers(app: InspectableApp, entry: string, cwd: string): Promise<string[]> {
     const served = new Set(app.routes.map((route) => route.handler.slice(0, route.handler.lastIndexOf("."))));
@@ -74,7 +74,8 @@ export async function unlistedControllers(app: InspectableApp, entry: string, cw
             if (typeof value !== "function" || !Object.hasOwn(value, CONTROLLER) || served.has(value.name)) continue;
             const shown = relative(cwd, file).replaceAll("\\", "/");
             warnings.push(
-                `${value.name} (${shown}) has @Controller() but serves no route. Add it to controllers in ${entry}.`,
+                `${value.name} (${shown}) has @Controller() but serves no route. Add it to controllers in ${entry}, ` +
+                    "or remove the controllers option: createApp() then loads every *.controller.ts file.",
             );
         }
     }

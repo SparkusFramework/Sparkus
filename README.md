@@ -49,6 +49,7 @@ await createApp({ controllers: [UserController] }).listen({ port: 3000 });
 - **Standard TypeScript.** TC39 decorators, no `experimentalDecorators`, no `reflect-metadata`. Dependencies come from `inject(Service)`: typed, no string tokens.
 - **One schema, everything typed.** `params`, `query`, `body` and `response` schemas type the handler, convert and validate inputs (`/users/abc` is a 400 naming `params.id`), and produce the OpenAPI 3.1 document (`app.openapi()`). What a schema does not declare is dropped: a client cannot add a `role` to a body, an entity's `passwordHash` never reaches a response. Already on Zod, Valibot or ArkType? Their schemas work too ([Standard Schema](https://standardschema.dev)).
 - **Errors anyone can act on.** HTTP errors are `application/problem+json` (RFC 9457) with stable codes. Startup errors (`SPK1xxx`) say what is wrong and how to fix it: dependency cycles show their full path, duplicate routes name both handlers, a 404 in development suggests the route you meant. Reference: [docs/errors.md](./docs/errors.md).
+- **No list to keep up to date.** `createApp()` loads every `*.controller.ts` file of `src/` at startup (`Bun.Glob` under Bun): add a file, get its routes. Sorted, checked (`SPK1020`), 2 to 4 ms for 20 controllers, nothing per request. A list still works: `createApp({ controllers: [UserController] })`.
 - **Built for agents.** `sparkus init` scaffolds `AGENTS.md`, `CLAUDE.md`, skills and a check hook; `sparkus check --json` validates the wiring without starting the server; [llms.txt](./llms.txt) is the whole API on one page.
 - **Production ready, nothing to install.** Typed configuration from the environment (`config()`, the app refuses to start and lists every missing variable), structured JSON logs with per-module levels and request ids, CORS, security headers, request timeouts with `ctx.signal`, health and readiness probes, graceful shutdown that fails readiness first, and OpenTelemetry spans and metrics through `@opentelemetry/api` without depending on it. Each one is an option, off by default, and costs nothing when off.
 - **Zero runtime dependencies**, checked in CI.
@@ -64,8 +65,7 @@ export const AppConfig = config({
     MODE: t.enum(["live", "sandbox"], { default: "sandbox" }),
 }); // inject(AppConfig).DATABASE_URL in a service; a missing variable stops the app with SPK1018
 
-const app = createApp({
-    controllers: [UserController],
+const app = createApp({                                   // controllers: every src/**/*.controller.ts
     logger: { requests: true },                           // JSON lines; LOG_LEVEL=info,db=debug
     cors: { origin: ["https://app.example.com"], credentials: true },
     securityHeaders: true,                                // CSP, HSTS, nosniff, frame-options...
@@ -102,6 +102,7 @@ Creates a project ready for humans and agents: an example feature with its tests
 | `sparkus check [entry]` | Wires the app (DI, routes, schemas) without listening; prints the first error with its code. |
 | `sparkus routes [entry]` | Lists the routes. |
 | `sparkus openapi [entry]` | Prints the OpenAPI 3.1 document generated from the route schemas (also `app.openapi()`). |
+| `sparkus build [main]` | Bundles the app for production (`dist/`, `--target bun` or `node`). Controllers are found at build time: the bundle starts without scanning anything. In your own build script: `plugins: [sparkusPlugin()]` from `sparkus/build`. |
 | `sparkus client [entry] --out src/client.ts` | Generates a typed client from the route schemas: one file, no dependency. `createClient({ baseUrl }).user.get({ params: { id: 42 } })` returns the response schema's type; errors throw `ApiError` with the problem details. |
 
 ## Testing an app
@@ -110,7 +111,7 @@ Creates a project ready for humans and agents: an example feature with its tests
 import { createTestApp } from "@sparkus/testing";
 
 const app = await createTestApp({
-    controllers: [UserController],
+    ...options,                                           // from src/app.ts; controllers found in src/
     overrides: [{ provide: UserService, useValue: { find: () => ({ id: "1", name: "Fake" }) } }],
 });
 const res = await app.inject({ url: "/users/1" });

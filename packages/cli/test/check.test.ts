@@ -35,7 +35,8 @@ describe("sparkus check / routes", () => {
         expect(out.warnings).toHaveLength(1);
         expect(out.warnings[0]).toStartWith("Orders (");
         expect(out.warnings[0]).toEndWith(
-            `orders/orders.controller.ts) has @Controller() but serves no route. Add it to controllers in ${entry}.`,
+            `orders/orders.controller.ts) has @Controller() but serves no route. Add it to controllers in ${entry}, ` +
+                "or remove the controllers option: createApp() then loads every *.controller.ts file.",
         );
         expect((await run(["check", join(fixtures, "ok-app.ts"), "--json"])).out).not.toContain("warnings");
     });

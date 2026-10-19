@@ -1,11 +1,5 @@
-import {
-    createApp as createCoreApp,
-    ErrorCode,
-    SparkusError,
-    type AppOptions as CoreAppOptions,
-    type SparkusApp,
-} from "@sparkus/core";
-import type { Engine } from "@sparkus/core/engine";
+import { ErrorCode, SparkusApp, SparkusError, type AppOptions as CoreAppOptions } from "@sparkus/core";
+import { callerFile, type Engine } from "@sparkus/core/engine";
 
 /** "auto" picks Bun.serve under Bun and node:http under Node. */
 export type EngineChoice = "auto" | "bun" | "node" | Engine;
@@ -30,13 +24,15 @@ async function loadEngine(choice: EngineChoice): Promise<Engine> {
 }
 
 /**
- * Creates an application. The HTTP engine is loaded on listen(), so an app
- * that is only tested in memory never loads a server.
+ * Creates an application. Controllers are found in the source folder of the file calling
+ * this (every `*.controller.ts` under `src/`), unless `controllers` lists them. The HTTP
+ * engine is loaded on listen(), so an app that is only tested in memory never loads a server.
  *
- *     const app = createApp({ controllers: [UserController] });
+ *     const app = createApp();
  *     await app.listen({ port: 3000 });
  */
-export function createApp(options: AppOptions): SparkusApp {
+export function createApp(options: AppOptions = {}): SparkusApp {
     const choice = options.engine ?? "auto";
-    return createCoreApp({ ...options, engine: () => loadEngine(choice) });
+    const origin = typeof options.controllers === "object" ? undefined : callerFile(createApp);
+    return new SparkusApp({ ...options, engine: () => loadEngine(choice) }, origin);
 }

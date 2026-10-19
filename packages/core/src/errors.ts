@@ -23,6 +23,7 @@ export const ErrorCode = {
     InvalidRouteSchema: "SPK1017",
     InvalidConfig: "SPK1018",
     InvalidOption: "SPK1019",
+    ControllerDiscovery: "SPK1020",
 
     RouteNotFound: "SPK2001",
     MethodNotAllowed: "SPK2002",
