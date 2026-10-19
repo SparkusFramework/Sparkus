@@ -33,3 +33,11 @@ jobs:
       - run: bun run test
         env:
           NODE_BIN: node
+      # A real app on the current framework: it must keep type checking, wiring and passing.
+      - name: examples/conduit
+        working-directory: examples/conduit
+        shell: bash
+        run: |
+          bun run typecheck
+          bun test
+          bunx sparkus check --json
