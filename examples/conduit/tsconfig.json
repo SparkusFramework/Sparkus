@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "Preserve",
+        "moduleResolution": "Bundler",
+        "allowImportingTsExtensions": true,
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "verbatimModuleSyntax": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "types": [
+            "bun"
+        ]
+    },
+    "include": [
+        "src"
+    ]
+}

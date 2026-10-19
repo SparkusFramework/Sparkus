@@ -33,3 +33,12 @@ jobs:
       - run: bun run test
         env:
           NODE_BIN: node
+      # A real app on the current framework: it must keep type checking, wiring and passing.
+      - name: examples/conduit
+        working-directory: examples/conduit
+        shell: bash
+        run: |
+          bun run typecheck
+          bun test
+          # Not bunx: the install ran before the build, so the workspace has no sparkus bin link.
+          bun ../../packages/cli/src/main.ts check --json
