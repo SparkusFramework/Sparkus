@@ -145,7 +145,7 @@ const res = await app.inject({ method: "POST", url: "/users", body: { name: "Ada
 res.status; res.json(); res.headers; res.text;
 ```
 
-In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
+In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect). `app.fetch(request)` is the web-standard handler, for a generated client: `createClient({ baseUrl: "http://test", fetch: (request) => app.fetch(request) })`.
 
 ## CLI
 

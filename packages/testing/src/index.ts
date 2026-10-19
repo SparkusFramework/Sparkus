@@ -27,6 +27,13 @@ export interface InjectResponse {
 export class TestApp {
     constructor(readonly app: SparkusApp) {}
 
+    /**
+     * The app's web-standard handler, for code that takes a fetch (a generated client):
+     * `createClient({ baseUrl: "http://test", fetch: (request) => app.fetch(request) })`.
+     * An arrow, like `SparkusApp.fetch`, so `fetch: app.fetch` works unbound.
+     */
+    readonly fetch = (request: Request): Promise<Response> => this.app.fetch(request);
+
     /** Sends a request through the full pipeline (routing, guards, interceptors, validation, errors). */
     async inject(options: InjectOptions): Promise<InjectResponse> {
         const headers = new Headers(options.headers);
