@@ -1,5 +1,17 @@
 // The app the generated client of client.test.ts is built from (fixtures/client/api.ts).
-import { Controller, Delete, Get, HttpError, Post, Put, UseGuards, createApp, t, type Ctx } from "sparkus";
+import {
+    Controller,
+    Delete,
+    Get,
+    HttpError,
+    Post,
+    Put,
+    UseGuards,
+    createApp,
+    t,
+    type AppOptions,
+    type Ctx,
+} from "sparkus";
 
 const Article = t.object({
     id: t.integer(),
@@ -69,4 +81,6 @@ class Health {
     }
 }
 
-export default createApp({ controllers: [ArticleController, Health] });
+// Exported as llms.txt tells apps to, so client.test.ts can also build it with createTestApp.
+export const options: AppOptions = { controllers: [ArticleController, Health] };
+export default createApp(options);

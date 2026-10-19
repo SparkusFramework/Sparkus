@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createTestApp } from "@sparkus/testing";
 import { generateClient, tsType } from "../src/client.js";
 import { main } from "../src/main.js";
-import app from "./fixtures/client-app.js";
+import app, { options } from "./fixtures/client-app.js";
 import { ApiError, createClient } from "./fixtures/client/api.js";
 
 const GOLDEN = join(import.meta.dir, "fixtures/client/api.ts");
@@ -64,6 +65,20 @@ describe("generated client", () => {
             fetch: (request) => app.fetch(request),
         });
         expect(await admin.article.remove({ params: { id: "1" } })).toBeUndefined();
+    });
+
+    test("plugs into createTestApp as llms.txt says (issue #21)", async () => {
+        const testApp = await createTestApp(options);
+        try {
+            const client = createClient({ baseUrl: "http://test", fetch: (request) => testApp.fetch(request) });
+            expect((await client.article.get({ params: { id: 1 } })).title).toBe("Hello");
+            expect((await rejection(client.article.get({ params: { id: 999 } }))).status).toBe(404);
+
+            const unbound = createClient({ baseUrl: "http://test", fetch: testApp.fetch });
+            expect(await unbound.health.check()).toBe("ok");
+        } finally {
+            await testApp.close();
+        }
     });
 
     test("wrong inputs do not compile", () => {

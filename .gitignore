@@ -10,6 +10,9 @@ bench/targets/*/dist
 bench/results
 packages/*/dist
 tests/*/dist
+tests/conformance/dist-discovered
+tests/conformance/dist-bundled
+packages/cli/test/fixtures-build/dist
 *.tsbuildinfo
 packages/cli/test/tmp-init
 packages/cli/test/tmp-dev

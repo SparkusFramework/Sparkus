@@ -13,6 +13,7 @@ export function projectFiles(name: string): Record<string, string> {
                 scripts: {
                     dev: "sparkus dev",
                     start: "bun src/main.ts",
+                    build: "sparkus build",
                     // No "check" script: it would shadow `bun check` (the type checker).
                     test: "bun test",
                     typecheck: "bun check",
@@ -77,12 +78,10 @@ export function projectFiles(name: string): Record<string, string> {
 }
 
 const APP = `import { createApp, type AppOptions } from "sparkus";
-import { UserController } from "./users/users.controller.ts";
 
 // Tests build the same app: createTestApp({ ...options, overrides }).
+// Controllers are not listed: every *.controller.ts file under src/ is loaded at startup.
 export const options: AppOptions = {
-    // Every controller is listed here. Services are not: inject() creates them.
-    controllers: [UserController],
     // Values for token()s. Configuration is not one: it lives in src/config.ts.
     providers: [],
     // One JSON line per request; LOG_LEVEL=debug (or info,users=debug) changes the levels.
@@ -248,21 +247,22 @@ A Sparkus backend (TypeScript, Bun). Read this before changing code.
 
 | Command | Use |
 |---|---|
-| \`bunx sparkus check --json\` | After every change. Wires the app without starting it; prints the first error with its code, and \`warnings\` (controllers missing from \`src/app.ts\`). |
+| \`bunx sparkus check --json\` | After every change. Wires the app without starting it; prints the first error with its code. |
 | \`bun test\` | Run the tests. |
 | \`bun check\` | Type check. |
 | \`bunx sparkus routes\` | List the routes. |
 | \`bun run dev\` | Start with reload on save. |
+| \`bun run build\` | Bundle for production into \`dist/\` (controllers found at build time); run \`bun dist/main.js\`. |
 
 ## Layout
 
-- \`src/app.ts\` exports \`options\` (every controller and provider, the production options) and the app. \`src/main.ts\` starts it. \`src/config.ts\` declares every environment variable.
-- One feature per folder: \`src/<feature>/<feature>.controller.ts\`, \`<feature>.service.ts\`, \`<feature>.test.ts\`.
+- \`src/app.ts\` exports \`options\` (providers, the production options) and the app. \`src/main.ts\` starts it. \`src/config.ts\` declares every environment variable.
+- One feature per folder: \`src/<feature>/<feature>.controller.ts\`, \`<feature>.service.ts\`, \`<feature>.test.ts\`. Every \`*.controller.ts\` file under \`src/\` is loaded at startup: never list controllers.
 - One class per file.
 
 ## Rules
 
-- Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`. Add every controller to \`controllers\` in \`options\` in \`src/app.ts\`.
+- Controllers: \`@Controller("/prefix")\`, one method per route with \`@Get\`, \`@Post\`, \`@Put\`, \`@Patch\` or \`@Delete\`, in a file named \`<feature>.controller.ts\` that exports the class.
 - Inputs are typed by schemas next to the controller: \`{ params, query, body }\` built with \`t\`. The handler takes \`ctx: Ctx<typeof Route>\`. Never parse or validate \`ctx.params\`, \`ctx.query\` or \`ctx.body\` by hand.
 - \`ctx.body\` holds only the fields its schema lists (unknown ones are dropped), so a client cannot sneak in an \`id\` or a \`role\`.
 - Declare a \`response\` schema on routes that return records: only its fields are sent, so internal fields (password hashes, foreign keys) never leak. Return entities as they are; do not copy fields by hand.
@@ -290,7 +290,7 @@ name: add-endpoint
 description: Add an HTTP endpoint to this Sparkus app (route, typed inputs, test). Use when asked to add or change an API route.
 ---
 
-1. Find the feature folder in \`src/<feature>/\`, or create one (controller, service, test). New controllers go in \`controllers\` in \`src/app.ts\`.
+1. Find the feature folder in \`src/<feature>/\`, or create one (controller, service, test). A new controller goes in \`src/<feature>/<feature>.controller.ts\` (exported): it is found at startup.
 2. Declare the inputs next to the controller, with \`t\` from "sparkus":
 
    \`\`\`ts
@@ -332,7 +332,7 @@ description: Add a service (business logic, data access) to this Sparkus app and
 1. Create \`src/<feature>/<feature>.service.ts\` with a plain class, no constructor parameters (Sparkus calls \`new X()\`).
 2. Dependencies come from fields: \`private readonly db = inject(Database);\`.
 3. Startup work (connections, cache warm-up) goes in \`onInit()\`, cleanup in \`onShutdown()\`. Both may be async.
-4. Use it from a controller with \`private readonly things = inject(ThingService);\`. Services are singletons: never \`new\` them, never list them in \`controllers\`.
+4. Use it from a controller with \`private readonly things = inject(ThingService);\`. Services are singletons: never \`new\` them.
 5. Configuration: add the variable to \`config({ ... })\` in \`src/config.ts\` (\`API_KEY: t.string({ min: 1 })\`) and to \`.env.example\`, then \`private readonly config = inject(AppConfig)\`. For an interface implemented by several classes, use a token: \`export const MAILER = token<Mailer>("MAILER")\`, provided in \`providers\` in \`src/app.ts\`.
 6. Log with \`private readonly log = inject(Logger).child("<feature>")\`. A service wrapping a database or remote server implements \`HealthCheck\`: \`checkHealth()\` throws when it cannot serve, and \`/ready\` reports it.
 7. Run \`bunx sparkus check --json\`. A dependency cycle is \`SPK1002\`.
@@ -373,7 +373,7 @@ name: fix-sparkus-error
 description: Diagnose and fix a Sparkus error code (SPK1xxx at startup, SPK2xxx in responses). Use when sparkus check, a test or a response shows an SPK code.
 ---
 
-Run \`bunx sparkus check --json\`. The message names the class, route or value at fault, then the fix. A \`warnings\` entry names a controller missing from \`controllers\` in \`src/app.ts\` (its routes are 404s). Every code: \`node_modules/sparkus/docs/errors.md\`.
+Run \`bunx sparkus check --json\`. The message names the class, route or value at fault, then the fix. A route that answers 404: its controller is not exported from a \`*.controller.ts\` file under \`src/\`. Every code: \`node_modules/sparkus/docs/errors.md\`.
 
 | Code | Usual fix |
 |---|---|
@@ -381,6 +381,7 @@ Run \`bunx sparkus check --json\`. The message names the class, route or value a
 | SPK1002 | Dependency cycle: move what both classes need into a third service. |
 | SPK1003 | Same method and path twice: remove or rename one route. |
 | SPK1004 | A class in \`controllers\` lacks \`@Controller()\`; services are never listed there. |
+| SPK1020 | No \`*.controller.ts\` file under \`src/\`, or one that exports no \`@Controller()\` class, or fails to load (see \`cause\`). |
 | SPK1006 | Use the same \`:param\` name at the same position in every path. |
 | SPK1009 | A constructor threw (see \`cause\`; move I/O to \`onInit()\`), or has parameters: use \`inject()\` in fields. |
 | SPK1013 | A \`token()\` has no provider: add it to \`providers\` in \`src/app.ts\`; tests pass \`providers\` to \`createTestApp\`. |
@@ -426,7 +427,7 @@ description: Protect routes with a guard (bearer token, API key, roles) and pass
    Return \`true\` to let the request through; anything else is a 403 (SPK2007). Throw an \`HttpError\` for a 401 or your own code.
 2. Apply it: \`@UseGuards(AuthGuard)\` on the controller (every route) or on one method; \`createApp({ guards: [AuthGuard] })\` for the whole app.
 3. Handlers read the user through a typed state: \`create(ctx: Ctx<typeof CreateThing, { user: User }>)\`, then \`ctx.state.user\`.
-4. Secrets are tokens provided in \`src/app.ts\` (add-service skill). Guards are never listed in \`controllers\`.
+4. Secrets are tokens provided in \`src/app.ts\` (add-service skill).
 5. Test each case: no header (401 and your code), a bad token, a good one: \`inject({ url, headers: { authorization: "Bearer ..." } })\`.
 6. Run \`bunx sparkus check --json\`, then \`bun test\`.
 `;

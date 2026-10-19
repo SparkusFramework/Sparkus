@@ -1,6 +1,7 @@
 import { compileRoutes, type CompiledRoute } from "./compile.js";
 import type { HttpMethod } from "./context.js";
 import { Container, type Class, type Provider, type Token } from "./di.js";
+import { callerFile, discoverControllers } from "./discover.js";
 import { ErrorCode, SparkusError } from "./errors.js";
 import { healthRoutes, type HealthOptions } from "./health.js";
 import { Logger, requestScope, type LoggerOptions } from "./log.js";
@@ -35,8 +36,13 @@ export interface EngineServer {
 }
 
 export interface AppOptions {
-    /** Controller classes. Each must have @Controller(). */
-    controllers: readonly Class<object>[];
+    /**
+     * Default: found at startup. Every class with @Controller() exported by a `*.controller.ts`
+     * (or `.js`) file in the source folder: the top folder of the package that holds the file
+     * calling createApp(), `src/` for `src/app.ts` and `src/users/users.test.ts`. A string scans
+     * that folder instead, relative to the calling file. A list of classes scans nothing.
+     */
+    controllers?: readonly Class<object>[] | string;
     /** Replaces what the container builds for some tokens (config values, fakes, alternative classes). */
     providers?: readonly Provider[];
     /** Guards run before every route, before controller and route guards. */
@@ -146,7 +152,14 @@ export class SparkusApp {
     private shutdownDelay = 0;
     private log: Logger | undefined;
 
-    constructor(private readonly options: AppOptions) {
+    /**
+     * `origin`: the file that called createApp(), where controller discovery starts. Set by
+     * createApp() and createTestApp(); only needed when `controllers` is not a list.
+     */
+    constructor(
+        private readonly options: AppOptions,
+        private readonly origin?: string,
+    ) {
         for (const provider of options.providers ?? []) this.container.provide(provider);
     }
 
@@ -190,9 +203,19 @@ export class SparkusApp {
         checkInteger("bodyLimit", bodyLimit, "bytes");
         checkInteger("requestTimeout", options.requestTimeout ?? 0, "milliseconds");
         const exposeErrors = options.exposeErrors ?? defaultExposeErrors();
+        let controllers = options.controllers;
+        if (typeof controllers !== "object") {
+            const started = performance.now();
+            const found = await discoverControllers(controllers, this.origin);
+            controllers = found.controllers;
+            log.child("sparkus").debug(`Found ${controllers.length} controllers in ${found.root}/`, {
+                files: found.files,
+                ms: Math.round((performance.now() - started) * 100) / 100,
+            });
+        }
         const routes = compileRoutes(
             {
-                controllers: options.controllers,
+                controllers,
                 guards: options.guards ?? [],
                 interceptors: options.interceptors ?? [],
                 bodyLimit,
@@ -416,7 +439,11 @@ function portFromEnv(): number {
     return port;
 }
 
-/** Creates an application. Nothing is resolved until init() or listen(). */
-export function createApp(options: AppOptions): SparkusApp {
-    return new SparkusApp(options);
+/**
+ * Creates an application. Nothing is resolved until init() or listen(). Without a
+ * `controllers` list, they are found in the source folder of the file calling this.
+ */
+export function createApp(options: AppOptions = {}): SparkusApp {
+    const origin = typeof options.controllers === "object" ? undefined : callerFile(createApp);
+    return new SparkusApp(options, origin);
 }

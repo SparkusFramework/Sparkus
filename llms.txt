@@ -16,6 +16,7 @@ class UserService {
 const GetUser = { params: t.object({ id: t.integer({ min: 1 }) }) };
 const CreateUser = { body: t.object({ name: t.string({ min: 1 }) }), status: 201 };
 
+// src/users/users.controller.ts: the file name is what makes createApp() find it
 @Controller("/users")
 export class UserController {
     private readonly users = inject(UserService);
@@ -33,13 +34,13 @@ export class UserController {
     }
 }
 
-export default createApp({ controllers: [UserController] });   // src/app.ts
+export default createApp();   // src/app.ts: loads every *.controller.ts under src/
 // src/main.ts: await app.listen();   (port: PORT env or 3000)
 ```
 
 ## Routes
 
-- `@Controller(prefix)` on a class; it must be listed in `createApp({ controllers })`.
+- `@Controller(prefix)` on a class exported from a file named `<feature>.controller.ts` under `src/`: `createApp()` imports every such file at startup (sorted by path) and serves every `@Controller()` class they export. Nothing to list. A class in another file is not served (404). `controllers: "folder"` scans another folder (relative to the calling file); `controllers: [A, B]` lists them and scans nothing. A bundle has no files to scan: `sparkus build` finds them at build time instead. Errors: SPK1020.
 - `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@Head`, `@Options` on public instance methods: `(path, options?)`.
 - Paths: static segments and `:name` parameters. Case-sensitive; a trailing slash is a different path; static segments win over parameters. HEAD falls back to GET. Unknown path: 404 (SPK2001). Known path, other method: 405 with `Allow` (SPK2002).
 - Options: `{ params?, query?, body?, response?, status?, bodyLimit?, timeout? }`. `response` types what the handler returns (checked at compile time), keeps only its fields in the response, and documents it in OpenAPI. Declare them as a `const` and type the handler with `Ctx<typeof Options>`. A handler that does not match (wrong return type, wrong `Ctx`) is reported by TypeScript on the decorator (TS1241); the last lines of the error name the mismatch.
@@ -93,7 +94,6 @@ Keys are environment variable names. Fields: `t.string`, `t.integer`, `t.number`
 
 ```ts
 createApp({
-    controllers,
     logger: { requests: true, requestContext: true },   // request lines; reqId in every line logged during a request
     cors: { origin: ["https://app.example.com"], credentials: true },   // or cors: true for any origin
     securityHeaders: true,            // CSP, HSTS, nosniff, frame-options...; { "strict-transport-security": false } drops one
@@ -128,31 +128,33 @@ const timing: InterceptorFn = async (ctx, next) => { const r = await next(); ctx
 
 ## App
 
-`createApp({ controllers, providers?, guards?, interceptors?, onError?, exposeErrors?, bodyLimit?, requestTimeout?, logger?, cors?, securityHeaders?, requestId?, health?, telemetry?, engine? })`
+`createApp({ controllers?, providers?, guards?, interceptors?, onError?, exposeErrors?, bodyLimit?, requestTimeout?, logger?, cors?, securityHeaders?, requestId?, health?, telemetry?, engine? })`
 
 - `await app.listen({ port?, hostname?, signals?, shutdownTimeout?, shutdownDelay?, idleTimeout? })` → `{ engine, port, url }`. SIGINT/SIGTERM: readiness fails, wait `shutdownDelay`, stop accepting, finish in-flight requests (up to `shutdownTimeout`), `onShutdown`, exit.
 - `await app.init()` wires everything without listening. `app.routes` lists the routes. `app.fetch(request)` is a web-standard handler.
 - `app.openapi({ title, version })` returns the OpenAPI 3.1 document built from the route schemas (after `init()`).
 - `await app.close()` shuts down.
 - `engine`: `"auto"` (default), `"bun"`, `"node"`.
+- `controllers`: default, found in the source folder: the top folder of the package (nearest `package.json`) holding the file that calls `createApp()` (`src/` for `src/app.ts`, `dist/` for `dist/app.js`).
 
 ## Testing
 
 ```ts
 import { createTestApp } from "@sparkus/testing";
-const app = await createTestApp({ controllers, providers, overrides: [{ provide: UserService, useValue: fake }] });
+const app = await createTestApp({ providers, overrides: [{ provide: UserService, useValue: fake }] });   // controllers found in src/
 const res = await app.inject({ method: "POST", url: "/users", body: { name: "Ada" } });
 res.status; res.json(); res.headers; res.text;
 ```
 
-In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect).
+In memory, full pipeline, no port. `createTestApp` takes the same options as `createApp`: export them from `src/app.ts` (`export const options: AppOptions = {...}; export default createApp(options)`) and test the same app: `createTestApp({ ...options, overrides })`. Controllers are found from the test file like `createApp()` does (`src/users/users.test.ts` scans `src/`); tests in a top-level `test/` folder pass `controllers: "../src"`. A new app per test keeps singletons from leaking state between tests. `app.get(Token)` returns a singleton (a fake to inspect). `app.fetch(request)` is the web-standard handler, for a generated client: `createClient({ baseUrl: "http://test", fetch: (request) => app.fetch(request) })`.
 
 ## CLI
 
 - `sparkus init <dir>`: new project with AGENTS.md, CLAUDE.md, skills, check hook.
-- `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`. `warnings` lists controllers in `*.controller.ts` files that serve no route (missing from `controllers`).
+- `sparkus check [entry] --json`: wire the app without listening; `{ ok, error: { code, message } }`. `warnings` lists controllers in `*.controller.ts` files that serve no route (missing from an explicit `controllers` list).
 - `sparkus routes [entry] --json`: list routes.
 - `sparkus openapi [entry]`: print the OpenAPI 3.1 document.
+- `sparkus build [main] [--out dist] [--target bun|node]`: bundle for production (default entry `src/main.ts`, the file calling `listen()`). Controllers are found at build time and imported statically: the bundle scans nothing at startup. In a build script: `Bun.build({ entrypoints, outdir, plugins: [sparkusPlugin()] })`, `import { sparkusPlugin } from "sparkus/build"`.
 - `sparkus client [entry] --out src/client.ts`: generate a typed client (one file, no dependency): `const api = createClient({ baseUrl })`, then `await api.user.get({ params: { id: 42 } })` (group = controller name without `Controller`, method = handler name; input `{ params, query, body }`, second argument `{ headers, signal }`). Return types come from `response` schemas (`unknown` without one). Non-2xx responses throw `ApiError` (`status`, `code`, `problem`). In tests, pass `fetch: (request) => app.fetch(request)`. Run it again after changing a route.
 - `sparkus dev [entry]`: run and restart on changes under src/.
 

@@ -15,6 +15,11 @@
             "bun": "./src/engine.ts",
             "types": "./src/engine.ts",
             "default": "./dist/engine.js"
+        },
+        "./build": {
+            "bun": "./src/build.ts",
+            "types": "./src/build.ts",
+            "default": "./dist/build.js"
         }
     },
     "files": ["dist", "src"],
