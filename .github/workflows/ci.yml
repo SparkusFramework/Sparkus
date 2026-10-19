@@ -40,4 +40,5 @@ jobs:
         run: |
           bun run typecheck
           bun test
-          bunx sparkus check --json
+          # Not bunx: the install ran before the build, so the workspace has no sparkus bin link.
+          bun ../../packages/cli/src/main.ts check --json
